@@ -7,7 +7,7 @@ export const handleUpload = async (file) => {
   formData.append('file', file); 
 
   try {
-    const res = await axios.post('http://localhost:5000/api/upload', formData, {
+    const res = await axios.post('https://ecom-ghqt.onrender.com/api/upload', formData, {
       headers: { 
         'Content-Type': 'multipart/form-data',
         'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -15,8 +15,13 @@ export const handleUpload = async (file) => {
     });
     return res.data.path; // ส่ง Path ที่ได้จาก Backend กลับไปบันทึกใน Database ต่อ
   } catch (err) {
-    console.error("Upload error:", err);
-    alert("Upload failed: ไฟล์อาจมีขนาดใหญ่เกินไปหรือชนิดไฟล์ไม่ถูกต้อง");
+    console.error("Upload error:", err.response?.data || err.message);
+    
+    if (err.response?.status === 413) {
+      alert("ไฟล์มีขนาดใหญ่เกินไป (จำกัดไม่เกิน 5MB)");
+    } else {
+      alert("การอัปโหลดล้มเหลว: โปรดตรวจสอบชนิดไฟล์หรือสิทธิ์การเข้าถึง");
+    }
     return null;
   }
 };

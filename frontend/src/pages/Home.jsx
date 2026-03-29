@@ -1,42 +1,55 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import ProductCard from '../components/ProductCard';
 
 const Home = () => {
   const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchProducts = async () => {
-      const { data } = await axios.get('http://localhost:5000/api/products');
-      setProducts(data);
+      try {
+        // แก้ไขเป็น URL ของ Render เรียบร้อยแล้ว
+        const res = await axios.get('https://ecom-ghqt.onrender.com/api/products');
+        setProducts(res.data);
+      } catch (err) {
+        console.error("Fetch error:", err);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchProducts();
   }, []);
 
+  if (loading) return (
+    <div className="min-h-[60vh] flex items-center justify-center text-zinc-500 italic font-black text-2xl animate-pulse">
+      LOADING SNEAKERS...
+    </div>
+  );
+
   return (
-    <div className="p-8">
-      <header className="mb-12 text-center">
-        <h1 className="text-5xl font-black tracking-tighter italic">LIMITED DROPS</h1>
-        <p className="text-gray-500">Exclusive sneakers for the culture.</p>
+    <div className="p-8 max-w-7xl mx-auto min-h-screen">
+      <header className="mb-12 flex justify-between items-end">
+        <div>
+          <h1 className="text-6xl font-black italic tracking-tighter text-white">NEW ARRIVALS</h1>
+          <p className="text-zinc-500 font-medium mt-2 uppercase tracking-widest text-xs">Explore the latest drops from Sneaker Hub.</p>
+        </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
-        {products.map(product => (
-          <div key={product._id} className="bg-[#1a1a1a] rounded-3xl p-5 border border-transparent hover:border-green-500 transition-all group">
-            <div className="relative h-60 mb-4 bg-[#252525] rounded-2xl overflow-hidden">
-              {/* แสดงผลวิดีโอหรือภาพจาก Backend โดยตรง */}
-              {product.video ? (
-                <video src={`http://localhost:5000/${product.video}`} muted loop className="w-full h-full object-cover group-hover:scale-110 transition" onMouseOver={e => e.target.play()} onMouseOut={e => e.target.pause()} />
-              ) : (
-                <img src={`http://localhost:5000/${product.images[0]}`} alt={product.name} className="w-full h-full object-contain" />
-              )}
-            </div>
-            <h3 className="text-xl font-bold">{product.name}</h3>
-            <p className="text-gray-400 mb-4">฿{product.price.toLocaleString()}</p>
-            <button className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-green-500 transition">ADD TO CART</button>
-          </div>
-        ))}
-      </div>
+      {products.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
+          {products.map(product => (
+            <ProductCard key={product._id} product={product} />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center p-32 border-2 border-dashed border-zinc-800 rounded-[4rem] bg-zinc-900/20">
+          <p className="text-zinc-600 italic text-xl font-bold uppercase">No sneakers in stock.</p>
+          <p className="text-zinc-700 text-sm mt-2">Check back later or visit Admin to add products.</p>
+        </div>
+      )}
     </div>
   );
 };
+
 export default Home;

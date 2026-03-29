@@ -2,28 +2,44 @@ const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
 
-// ✅ 1. สร้างออเดอร์ใหม่ (URL: POST /api/orders)
+// ---------------------------------------------------------
+// 💡 ข้อควรระวัง: วาง Route ที่เป็น "คำเฉพาะ" (เช่น /all) 
+// ไว้ก่อน Route ที่เป็น "Parameter" (เช่น /:id) เสมอ
+// ---------------------------------------------------------
+
+// ✅ 1. ดึงออเดอร์ทั้งหมด (สำหรับ Admin)
+router.get('/all', async (req, res) => {
+  try {
+    const orders = await Order.find()
+      .populate('user', 'username email') 
+      .populate('items.product')
+      .sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ✅ 2. สร้างออเดอร์ใหม่ (URL: POST /api/orders)
 router.post('/', async (req, res) => {
   try {
-    const { userId, user, items, total, shippingAddress, paymentMethod } = req.body;
+    const { user, items, total, address, paymentMethod } = req.body;
 
-    // รองรับทั้ง userId หรือ user เพื่อป้องกัน Error จาก Frontend
-    const targetUser = userId || user;
-
-    if (!targetUser || !items || items.length === 0 || !total) {
+    // ตรวจสอบข้อมูลเบื้องต้น
+    if (!user || !items || items.length === 0 || !total) {
       return res.status(400).json({ 
         success: false, 
-        message: "ข้อมูลไม่ครบถ้วน (กรุณาตรวจสอบสินค้าและราคารวม)" 
+        message: "ข้อมูลไม่ครบถ้วน (ขาดข้อมูลผู้ใช้, สินค้า หรือราคารวม)" 
       });
     }
 
     const order = new Order({
-      user: targetUser,
+      user: user,
       items: items,
       total: total,
-      shippingAddress: shippingAddress,
+      shippingAddress: address, // ใช้ชื่อให้ตรงกับที่ส่งมาจาก Frontend (address)
       paymentMethod: paymentMethod,
-      // Logic การตั้งสถานะอัตโนมัติ
+      // ถ้าจ่ายเงินสดให้เป็น Pending ถ้าโอนเงินให้รอชำระ
       status: paymentMethod === "Cash on Delivery" ? 'Pending' : 'Waiting for Payment'
     });
     
@@ -35,11 +51,11 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ✅ 2. ดึงออเดอร์ของเฉพาะ User (สำคัญมากสำหรับหน้า My Orders)
+// ✅ 3. ดึงออเดอร์ของเฉพาะ User (สำหรับหน้า My Orders)
 router.get('/user/:userId', async (req, res) => {
   try {
     const orders = await Order.find({ user: req.params.userId })
-      .populate('items.product') // ดึงรายละเอียดสินค้ามาแสดงรูปและชื่อ
+      .populate('items.product') 
       .sort({ createdAt: -1 }); 
     res.json(orders);
   } catch (err) {
@@ -47,7 +63,7 @@ router.get('/user/:userId', async (req, res) => {
   }
 });
 
-// ✅ 3. แจ้งชำระเงิน/แนบสลิป (URL: PUT /api/orders/:id/pay)
+// ✅ 4. แจ้งชำระเงิน/แนบสลิป (URL: PUT /api/orders/:id/pay)
 router.put('/:id/pay', async (req, res) => {
   try {
     const { paymentSlip } = req.body; 
@@ -60,43 +76,36 @@ router.put('/:id/pay', async (req, res) => {
       req.params.id,
       { 
         paymentSlip: paymentSlip,
-        status: 'Paid' // อัปเดตสถานะเป็นชำระแล้ว เพื่อรอ Admin ตรวจสอบ
+        status: 'Paid' // อัปเดตเป็นชำระแล้ว
       },
       { new: true }
     );
 
     if (!updatedOrder) {
-      return res.status(404).json({ success: false, message: "ไม่พบข้อมูลคำสั่งซื้อนี้" });
+      return res.status(404).json({ success: false, message: "ไม่พบข้อมูลคำสั่งซื้อ" });
     }
 
-    res.json({ success: true, message: "แจ้งชำระเงินสำเร็จ ระบบกำลังตรวจสอบ", data: updatedOrder });
+    res.json({ success: true, message: "แจ้งชำระเงินสำเร็จ!", data: updatedOrder });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// ✅ 4. ดึงออเดอร์ทั้งหมด (Admin Only)
-// ย้ายเส้นทาง /all ไว้ข้างบนระบุ ID เสมอเพื่อป้องกัน Express สับสน
-router.get('/all', async (req, res) => {
-  try {
-    const orders = await Order.find()
-      .populate('user', 'username email') 
-      .populate('items.product')
-      .sort({ createdAt: -1 });
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ✅ 5. (เพิ่มเติม) อัปเดตสถานะโดยแอดมิน (เช่น เปลี่ยนจาก Pending -> Shipped)
+// ✅ 5. อัปเดตสถานะออเดอร์ (สำหรับ Admin/Owner)
 router.put('/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
-    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    const order = await Order.findByIdAndUpdate(
+      req.params.id, 
+      { status }, 
+      { new: true }
+    );
+    
+    if (!order) return res.status(404).json({ success: false, message: "ไม่พบออเดอร์" });
+    
     res.json({ success: true, data: order });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

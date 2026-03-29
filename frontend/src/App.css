@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* เพิ่มเติมเพื่อให้พื้นหลังเป็นสีเข้มทั่วทั้งเว็บ */
+body {
+  background-color: #121212;
+  color: white;
+  margin: 0;
+  font-family: sans-serif;
+}
