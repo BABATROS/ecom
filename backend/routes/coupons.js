@@ -2,19 +2,25 @@ const express = require('express');
 const router = express.Router();
 const Coupon = require('../models/Coupon');
 
-// 1. GET: ดึงคูปองที่เปิดใช้งานได้ (สำหรับหน้าบ้าน/ลูกค้า)
-router.get('/available', async (req, res) => {
-  try {
-    let coupons = await Coupon.find({ active: true });
+// ฟังก์ชันสำหรับสร้างคูปองเริ่มต้น (Helper Function)
+const createDefaultCoupons = async () => {
+  const defaultCoupons = [
+    { code: 'WELCOME10', discountType: 'percent', discountValue: 10, minCartTotal: 0, active: true },
+    { code: 'SAVE100', discountType: 'amount', discountValue: 100, minCartTotal: 1000, active: true },
+    { code: 'FREESHIP', discountType: 'free_shipping', discountValue: 0, minCartTotal: 1500, active: true }
+  ];
+  await Coupon.insertMany(defaultCoupons);
+};
 
-    if (!coupons.length) {
-      const defaultCoupons = [
-        { code: 'WELCOME10', discountType: 'percent', discountValue: 10, minCartTotal: 0, active: true },
-        { code: 'SAVE100', discountType: 'amount', discountValue: 100, minCartTotal: 1000, active: true },
-        { code: 'FREESHIP', discountType: 'free_shipping', discountValue: 0, minCartTotal: 1500, active: true }
-      ];
-      await Coupon.insertMany(defaultCoupons);
-      coupons = await Coupon.find({ active: true });
+// 1. GET: ดึงคูปองทั้งหมด (สำหรับ Admin) + สร้างค่าเริ่มต้นหากไม่มีข้อมูล
+router.get('/', async (req, res) => {
+  try {
+    let coupons = await Coupon.find().sort({ createdAt: -1 });
+
+    // ถ้าไม่มีคูปองเลย ให้สร้างชุดเริ่มต้นทันที
+    if (coupons.length === 0) {
+      await createDefaultCoupons();
+      coupons = await Coupon.find().sort({ createdAt: -1 });
     }
 
     res.json(coupons);
@@ -23,10 +29,10 @@ router.get('/available', async (req, res) => {
   }
 });
 
-// 2. GET: ดึงคูปองทั้งหมด (สำหรับ Admin ดูในตารางจัดการ)
-router.get('/', async (req, res) => {
+// 2. GET: ดึงคูปองที่ใช้งานได้เท่านั้น (สำหรับหน้าบ้าน)
+router.get('/available', async (req, res) => {
   try {
-    const coupons = await Coupon.find().sort({ createdAt: -1 });
+    const coupons = await Coupon.find({ active: true });
     res.json(coupons);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -61,35 +67,25 @@ router.post('/add', async (req, res) => {
 // 4. PUT: แก้ไขคูปอง
 router.put('/:id', async (req, res) => {
   try {
-    const { code, discountType, discountValue, minCartTotal, active } = req.body;
-    
     const updatedCoupon = await Coupon.findByIdAndUpdate(
       req.params.id,
-      { 
-        code: code ? code.trim().toUpperCase() : undefined, 
-        discountType, 
-        discountValue, 
-        minCartTotal, 
-        active 
-      },
+      { ...req.body, code: req.body.code?.trim().toUpperCase() },
       { new: true }
     );
-
-    if (!updatedCoupon) return res.status(404).json({ msg: "ไม่พบคูปองที่ต้องการแก้ไข" });
-    res.json({ msg: "อัปเดตคูปองสำเร็จ", coupon: updatedCoupon });
+    if (!updatedCoupon) return res.status(404).json({ msg: "ไม่พบคูปอง" });
+    res.json(updatedCoupon);
   } catch (err) {
-    res.status(500).json({ error: "เกิดข้อผิดพลาดในการแก้ไขคูปอง" });
+    res.status(500).json({ error: err.message });
   }
 });
 
 // 5. DELETE: ลบคูปอง
 router.delete('/:id', async (req, res) => {
   try {
-    const deletedCoupon = await Coupon.findByIdAndDelete(req.params.id);
-    if (!deletedCoupon) return res.status(404).json({ msg: "ไม่พบคูปอง" });
-    res.json({ msg: "ลบคูปองออกจากระบบแล้ว" });
+    await Coupon.findByIdAndDelete(req.params.id);
+    res.json({ msg: "ลบคูปองสำเร็จ" });
   } catch (err) {
-    res.status(500).json({ error: "เกิดข้อผิดพลาดในการลบ" });
+    res.status(500).json({ error: err.message });
   }
 });
 
