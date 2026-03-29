@@ -15,6 +15,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import OwnerCouponManager from './components/OwnerCouponManager';
 import Checkout from './pages/Checkout'; 
 import MyOrders from './pages/MyOrders'; 
+// 1. เพิ่มการ Import หน้า ProductDetail
+import ProductDetail from './pages/ProductDetail'; 
 
 function App() {
   return (
@@ -29,6 +31,10 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/coupons" element={<Coupons />} />
+          
+          {/* 2. เพิ่ม Route สำหรับดูรายละเอียดสินค้า (Public) */}
+          {/* :id คือตัวแปรที่จะรับ ID สินค้าจาก URL */}
+          <Route path="/product/:id" element={<ProductDetail />} />
           
           {/* User Routes (ต้อง Login) */}
           <Route element={<ProtectedRoute allowedRoles={['Admin', 'ShopOwner', 'User']} />}>

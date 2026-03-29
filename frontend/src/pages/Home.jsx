@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom'; // เพิ่ม useNavigate
 import ProductCard from '../components/ProductCard';
 
 const Home = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate(); // ประกาศตัวแปรสำหรับเปลี่ยนหน้า
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -39,7 +41,14 @@ const Home = () => {
       {products.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
           {products.map(product => (
-            <ProductCard key={product._id} product={product} />
+            /* เพิ่มส่วนหุ้มหรือจัดการให้คลิกที่ ProductCard แล้วไปหน้า Detail */
+            <div 
+              key={product._id} 
+              onClick={() => navigate(`/product/${product._id}`)} 
+              className="cursor-pointer"
+            >
+              <ProductCard product={product} />
+            </div>
           ))}
         </div>
       ) : (
