@@ -11,12 +11,17 @@ const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/product');
 const orderRoutes = require('./routes/order');
 const uploadRoutes = require('./routes/upload');
-const couponRoutes = require('./routes/coupons');
+const couponRoutes = require('./routes/coupons'); // ✅ ตรวจสอบว่ามีไฟล์ routes/coupons.js อยู่จริง
 
 const app = express();
 
 // 2. Middleware
-app.use(cors({ origin: true, credentials: true })); // ✅ ปรับ CORS ให้เสถียรขึ้น
+app.use(cors({ 
+  origin: true, 
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+})); 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -28,10 +33,15 @@ app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);  
 app.use('/api/orders', orderRoutes);      
 app.use('/api/upload', uploadRoutes);     
-app.use('/api/coupons', couponRoutes);    // Route คูปอง
+app.use('/api/coupons', couponRoutes);    // ✅ จุดที่เรียกใช้งานคูปอง
 
 app.get('/', (req, res) => {
   res.json({ message: 'Sneaker Hub Backend is running properly' });
+});
+
+// ✅ เพิ่ม Error Handling สำหรับ Route ที่ไม่มีอยู่จริง (ป้องกัน 404 แบบหาสาเหตุไม่ได้)
+app.use((req, res, next) => {
+  res.status(404).json({ error: `Path ${req.originalUrl} not found on this server.` });
 });
 
 // 4. Database Connection

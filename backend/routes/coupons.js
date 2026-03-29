@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Coupon = require('../models/Coupon');
 
-// ดึงคูปองที่เปิดใช้งานได้
+// 1. GET: ดึงคูปองที่เปิดใช้งานได้ (สำหรับหน้าบ้าน/ลูกค้า)
 router.get('/available', async (req, res) => {
   try {
     let coupons = await Coupon.find({ active: true });
@@ -23,7 +23,17 @@ router.get('/available', async (req, res) => {
   }
 });
 
-// สร้างคูปองใหม่ (สำหรับ Owner)
+// 2. GET: ดึงคูปองทั้งหมด (สำหรับ Admin ดูในตารางจัดการ)
+router.get('/', async (req, res) => {
+  try {
+    const coupons = await Coupon.find().sort({ createdAt: -1 });
+    res.json(coupons);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. POST: สร้างคูปองใหม่
 router.post('/add', async (req, res) => {
   try {
     const { code, discountType, discountValue, minCartTotal } = req.body;
@@ -45,6 +55,41 @@ router.post('/add', async (req, res) => {
     res.status(201).json(coupon);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. PUT: แก้ไขคูปอง
+router.put('/:id', async (req, res) => {
+  try {
+    const { code, discountType, discountValue, minCartTotal, active } = req.body;
+    
+    const updatedCoupon = await Coupon.findByIdAndUpdate(
+      req.params.id,
+      { 
+        code: code ? code.trim().toUpperCase() : undefined, 
+        discountType, 
+        discountValue, 
+        minCartTotal, 
+        active 
+      },
+      { new: true }
+    );
+
+    if (!updatedCoupon) return res.status(404).json({ msg: "ไม่พบคูปองที่ต้องการแก้ไข" });
+    res.json({ msg: "อัปเดตคูปองสำเร็จ", coupon: updatedCoupon });
+  } catch (err) {
+    res.status(500).json({ error: "เกิดข้อผิดพลาดในการแก้ไขคูปอง" });
+  }
+});
+
+// 5. DELETE: ลบคูปอง
+router.delete('/:id', async (req, res) => {
+  try {
+    const deletedCoupon = await Coupon.findByIdAndDelete(req.params.id);
+    if (!deletedCoupon) return res.status(404).json({ msg: "ไม่พบคูปอง" });
+    res.json({ msg: "ลบคูปองออกจากระบบแล้ว" });
+  } catch (err) {
+    res.status(500).json({ error: "เกิดข้อผิดพลาดในการลบ" });
   }
 });
 

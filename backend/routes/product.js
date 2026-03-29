@@ -23,7 +23,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 🌟 3. GET: ดึงข้อมูลสินค้าตาม ID (ตัวแก้บั๊ก Product Not Found)
+// 3. GET: ดึงข้อมูลสินค้าตาม ID
 router.get('/:id', async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
@@ -59,7 +59,40 @@ router.post('/add', upload.fields([
   }
 });
 
-// 5. DELETE: ลบสินค้า
+// 🌟 5. PUT: แก้ไขสินค้า (เพิ่มส่วนนี้เข้าไป)
+router.put('/:id', upload.fields([
+  { name: 'images', maxCount: 5 }, 
+  { name: 'video', maxCount: 1 }
+]), async (req, res) => {
+  try {
+    const { name, brand, description, price, stock } = req.body;
+    let updateData = { name, brand, description, price, stock };
+
+    // ถ้ามีการอัปโหลดรูปภาพหรือวิดีโอใหม่ ให้บันทึกชื่อไฟล์ใหม่ลงไป
+    if (req.files) {
+      if (req.files['images']) {
+        updateData.images = req.files['images'].map(f => f.filename);
+      }
+      if (req.files['video']) {
+        updateData.video = req.files['video'][0].filename;
+      }
+    }
+
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id, 
+      { $set: updateData }, 
+      { new: true }
+    );
+
+    if (!updatedProduct) return res.status(404).json({ msg: "ไม่พบสินค้าที่ต้องการแก้ไข" });
+    
+    res.json({ msg: "แก้ไขข้อมูลสินค้าสำเร็จ!", product: updatedProduct });
+  } catch (err) {
+    res.status(500).json({ error: "เกิดข้อผิดพลาดในการแก้ไขข้อมูล" });
+  }
+});
+
+// 6. DELETE: ลบสินค้า
 router.delete('/:id', async (req, res) => {
   try {
     const deletedProduct = await Product.findByIdAndDelete(req.params.id);

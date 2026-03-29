@@ -2,12 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
 
-// ---------------------------------------------------------
-// 💡 ข้อควรระวัง: วาง Route ที่เป็น "คำเฉพาะ" (เช่น /all) 
-// ไว้ก่อน Route ที่เป็น "Parameter" (เช่น /:id) เสมอ
-// ---------------------------------------------------------
-
-// ✅ 1. ดึงออเดอร์ทั้งหมด (สำหรับ Admin)
+// ✅ 1. GET: ดึงออเดอร์ทั้งหมด (สำหรับ Admin ดูสถานะชำระเงิน)
 router.get('/all', async (req, res) => {
   try {
     const orders = await Order.find()
@@ -20,38 +15,36 @@ router.get('/all', async (req, res) => {
   }
 });
 
-// ✅ 2. สร้างออเดอร์ใหม่ (URL: POST /api/orders)
+// ✅ 2. POST: สร้างออเดอร์ใหม่
 router.post('/', async (req, res) => {
   try {
     const { user, items, total, address, paymentMethod } = req.body;
 
-    // ตรวจสอบข้อมูลเบื้องต้น
     if (!user || !items || items.length === 0 || !total) {
       return res.status(400).json({ 
         success: false, 
-        message: "ข้อมูลไม่ครบถ้วน (ขาดข้อมูลผู้ใช้, สินค้า หรือราคารวม)" 
+        message: "ข้อมูลไม่ครบถ้วน" 
       });
     }
 
     const order = new Order({
-      user: user,
-      items: items,
-      total: total,
-      shippingAddress: address, // ใช้ชื่อให้ตรงกับที่ส่งมาจาก Frontend (address)
-      paymentMethod: paymentMethod,
-      // ถ้าจ่ายเงินสดให้เป็น Pending ถ้าโอนเงินให้รอชำระ
+      user,
+      items,
+      total,
+      shippingAddress: address,
+      paymentMethod,
+      // ปรับ Logic: ถ้าโอนเงินให้รอตรวจสอบ (Pending Verification)
       status: paymentMethod === "Cash on Delivery" ? 'Pending' : 'Waiting for Payment'
     });
     
     await order.save();
     res.status(201).json({ success: true, data: order });
   } catch (err) {
-    console.error("Order Create Error:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// ✅ 3. ดึงออเดอร์ของเฉพาะ User (สำหรับหน้า My Orders)
+// ✅ 3. GET: ดึงออเดอร์ของเฉพาะ User
 router.get('/user/:userId', async (req, res) => {
   try {
     const orders = await Order.find({ user: req.params.userId })
@@ -63,38 +56,35 @@ router.get('/user/:userId', async (req, res) => {
   }
 });
 
-// ✅ 4. แจ้งชำระเงิน/แนบสลิป (URL: PUT /api/orders/:id/pay)
+// ✅ 4. PUT: แจ้งชำระเงิน (User ส่งสลิป)
 router.put('/:id/pay', async (req, res) => {
   try {
     const { paymentSlip } = req.body; 
     
     if (!paymentSlip) {
-      return res.status(400).json({ success: false, message: "กรุณาแนบไฟล์สลิปหลักฐานการโอน" });
+      return res.status(400).json({ success: false, message: "กรุณาแนบสลิป" });
     }
 
     const updatedOrder = await Order.findByIdAndUpdate(
       req.params.id,
       { 
         paymentSlip: paymentSlip,
-        status: 'Paid' // อัปเดตเป็นชำระแล้ว
+        status: 'Pending Verification' // เปลี่ยนจาก Paid เป็น รอตรวจสอบสลิปก่อน
       },
       { new: true }
     );
 
-    if (!updatedOrder) {
-      return res.status(404).json({ success: false, message: "ไม่พบข้อมูลคำสั่งซื้อ" });
-    }
-
-    res.json({ success: true, message: "แจ้งชำระเงินสำเร็จ!", data: updatedOrder });
+    if (!updatedOrder) return res.status(404).json({ success: false, message: "ไม่พบออเดอร์" });
+    res.json({ success: true, message: "ส่งหลักฐานสำเร็จ! รอร้านตรวจสอบ", data: updatedOrder });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// ✅ 5. อัปเดตสถานะออเดอร์ (สำหรับ Admin/Owner)
+// ✅ 5. PUT: อัปเดตสถานะ (สำหรับ Admin ยืนยันว่า Paid หรือส่งของแล้ว)
 router.put('/:id/status', async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status } = req.body; // เช่น 'Paid', 'Shipped', 'Cancelled'
     const order = await Order.findByIdAndUpdate(
       req.params.id, 
       { status }, 
@@ -102,8 +92,18 @@ router.put('/:id/status', async (req, res) => {
     );
     
     if (!order) return res.status(404).json({ success: false, message: "ไม่พบออเดอร์" });
-    
-    res.json({ success: true, data: order });
+    res.json({ success: true, message: "อัปเดตสถานะสำเร็จ", data: order });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 🌟 6. DELETE: ลบออเดอร์ (เพิ่มส่วนนี้สำหรับ Admin)
+router.delete('/:id', async (req, res) => {
+  try {
+    const deletedOrder = await Order.findByIdAndDelete(req.params.id);
+    if (!deletedOrder) return res.status(404).json({ success: false, message: "ไม่พบออเดอร์ที่ต้องการลบ" });
+    res.json({ success: true, message: "ลบออเดอร์เรียบร้อยแล้ว" });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
