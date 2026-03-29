@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { ShoppingCart, User, LogOut, Home, Ticket, PlusCircle, LayoutDashboard, Package } from 'lucide-react';
+import { ShoppingCart, User, LogOut, Home, Ticket, PlusCircle, LayoutDashboard, Package, ShieldCheck } from 'lucide-react';
 import { getCart } from '../utils/cartUtils'; 
 
 const Navbar = () => {
@@ -12,15 +12,13 @@ const Navbar = () => {
   const [cartCount, setCartCount] = useState(0);
 
   useEffect(() => {
-    // อัปเดตสถานะจาก localStorage
     const currentToken = localStorage.getItem('token');
     const currentRole = localStorage.getItem('role');
     setToken(currentToken);
     setRole(currentRole);
     
-    // อัปเดตจำนวนสินค้า (ใส่ try-catch หรือเช็ค Array กันจอขาว)
     try {
-      const cart = getCart() || []; // ถ้า getCart ส่ง null ให้ใช้ [] แทน
+      const cart = getCart() || [];
       const count = Array.isArray(cart) 
         ? cart.reduce((total, item) => total + (Number(item.quantity) || 0), 0) 
         : 0;
@@ -32,12 +30,16 @@ const Navbar = () => {
   }, [location]);
 
   const handleLogout = () => {
-    localStorage.clear(); // ล้างทั้งหมดเพื่อความชัวร์
+    localStorage.clear();
     setToken(null);
     setRole(null);
     alert('Logged out successfully');
     navigate('/login');
   };
+
+  // ตรวจสอบว่าเป็น Admin หรือ ShopOwner (Case-insensitive)
+  const isAdmin = role?.toLowerCase() === 'admin';
+  const isOwner = role?.toLowerCase() === 'shopowner';
 
   return (
     <nav className="flex items-center justify-between p-4 bg-black/90 backdrop-blur-md border-b border-zinc-800 sticky top-0 z-50">
@@ -53,9 +55,9 @@ const Navbar = () => {
         </Link>
         
         <Link
-          title={role === 'ShopOwner' ? 'Manage Coupons' : 'Coupons'}
-          to={role === 'ShopOwner' ? '/manage-coupons' : '/coupons'}
-          className="text-zinc-400 hover:text-white transition"
+          title={isOwner || isAdmin ? 'Manage Coupons' : 'Coupons'}
+          to={isOwner || isAdmin ? '/admin/coupons' : '/coupons'} // ถ้าเป็น Admin ให้ไปหน้าจัดการ
+          className={`transition ${location.pathname.includes('coupon') ? 'text-red-600' : 'text-zinc-400 hover:text-white'}`}
         >
           <Ticket size={22} />
         </Link>
@@ -73,33 +75,39 @@ const Navbar = () => {
 
         {token ? (
           <div className="flex items-center space-x-4 border-l border-zinc-700 pl-5">
-            <Link 
-              title="My Orders" 
-              to="/my-orders" 
-              className={`text-zinc-400 hover:text-red-500 transition flex items-center gap-1 ${location.pathname === '/my-orders' ? 'text-red-600' : ''}`}
-            >
-              <Package size={22} />
-              <span className="hidden md:block text-[11px] font-bold uppercase tracking-wider">Orders</span>
-            </Link>
+            
+            {/* --- ส่วนของ ADMIN / OWNER เท่านั้น --- */}
+            {(isAdmin || isOwner) && (
+              <div className="flex items-center space-x-3 bg-zinc-900/50 p-1 rounded-2xl border border-zinc-800">
+                {/* ปุ่มไปหน้าจัดการ Order (หน้าใหม่ที่เราเพิ่งทำ) */}
+                <Link 
+                  to="/admin/orders" 
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${location.pathname === '/admin/orders' ? 'bg-red-600 text-white' : 'text-zinc-400 hover:text-white'}`}
+                >
+                  <ShieldCheck size={18} />
+                  <span className="hidden lg:block text-[10px] font-black uppercase tracking-tighter">Orders Control</span>
+                </Link>
 
-            {/* รองรับทั้ง ShopOwner และ shopowner (เผื่อเคสตัวเล็กใหญ่ใน DB) */}
-            {(role?.toLowerCase() === 'shopowner') && (
-              <Link 
-                to="/owner-dashboard"
-                className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl font-black text-[11px] uppercase hover:bg-white hover:text-black transition-all duration-300 shadow-lg shadow-red-900/20"
-              >
-                <PlusCircle size={16} />
-                <span className="hidden sm:block">Add Product</span>
-              </Link>
+                {/* ปุ่มเพิ่มสินค้า */}
+                <Link 
+                  to="/owner-dashboard"
+                  className="flex items-center gap-2 text-zinc-400 hover:text-white px-3 py-1.5 transition-all"
+                >
+                  <PlusCircle size={18} />
+                  <span className="hidden lg:block text-[10px] font-black uppercase tracking-tighter">Products</span>
+                </Link>
+              </div>
             )}
 
-            {role === 'Admin' && (
+            {/* --- ส่วนของ USER ทั่วไป --- */}
+            {!isAdmin && (
               <Link 
-                to="/admin"
-                className="flex items-center gap-2 bg-zinc-800 text-white px-4 py-2 rounded-xl font-bold text-[11px] hover:bg-zinc-700 transition"
+                title="My Orders" 
+                to="/my-orders" 
+                className={`text-zinc-400 hover:text-red-500 transition flex items-center gap-1 ${location.pathname === '/my-orders' ? 'text-red-600' : ''}`}
               >
-                <LayoutDashboard size={16} />
-                <span className="hidden sm:block">ADMIN</span>
+                <Package size={22} />
+                <span className="hidden md:block text-[11px] font-bold uppercase tracking-wider">My Orders</span>
               </Link>
             )}
             
