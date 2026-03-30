@@ -78,6 +78,8 @@ app.use((err, req, res, next) => {
   });
 });
 
+mongoose.set('strictQuery', true);
+
 // 🗄️ 7. MongoDB (ดักไว้ให้รองรับทั้ง MONGO_URI และ MONGODB_URI เผื่อตั้งชื่อสลับกัน)
 const dbUri = process.env.MONGO_URI || process.env.MONGODB_URI;
 if (!dbUri) {
