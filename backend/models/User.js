@@ -18,7 +18,7 @@ UserSchema.pre('save', async function(next) {
   // 1. ถ้าไม่ได้แก้รหัสผ่าน ให้ไปขั้นตอนถัดไปเลย
   if (!this.isModified('password')) return next(); 
 
-  try {
+  try { 
     // 2. เข้ารหัสผ่าน
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
