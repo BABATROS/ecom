@@ -2,27 +2,37 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const UserSchema = new mongoose.Schema({
-  username: { type: String, required: true, trim: true },
+  username: { type: String, required: true },
   email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true, select: false },
   role: {
     type: String,
     lowercase: true, 
-    // ✅ เพิ่ม 'customer' เข้าไปเรียบร้อย พี่จะกดปุ่มไหนก็ไม่พังแล้ว!
-    enum: ['user', 'customer', 'merchant', 'seller', 'shopowner', 'admin'], 
+    enum: ['user', 'customer', 'merchant', 'seller', 'shopowner', 'admin'],
     default: 'user'
   }
 }, { timestamps: true });
 
+// 🔥 แก้ไขตรงนี้ครับพี่! ต้องรับ next และเรียก next() แบบนี้
 UserSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
+  // 1. ถ้าไม่ได้แก้รหัสผ่าน ให้ไปขั้นตอนถัดไปเลย
+  if (!this.isModified('password')) return next(); 
+
+  try {
+    // 2. เข้ารหัสผ่าน
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    
+    // 3. ✅ สำคัญมาก: ต้องเรียก next() เพื่อบอกว่าทำเสร็จแล้วนะ เซฟลง DB ได้เลย!
+    next(); 
+  } catch (error) {
+    // 4. ถ้ามี Error ให้ส่ง error ไปที่ catch ใน auth.js
+    next(error); 
+  }
 });
 
-UserSchema.methods.comparePassword = async function(enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
+UserSchema.methods.comparePassword = async function(pass) {
+  return await bcrypt.compare(pass, this.password);
 };
 
 module.exports = mongoose.model('User', UserSchema);
