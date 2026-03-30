@@ -1,12 +1,12 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { Ticket, PlusCircle, ClipboardList, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Ticket, PlusCircle, ClipboardList, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
 
 const OwnerCouponManager = () => {
   const [coupons, setCoupons] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false); // ป้องกันการกดปุ่มซ้ำ
+  const [submitting, setSubmitting] = useState(false);
 
   // Form States
   const [code, setCode] = useState('');
@@ -21,7 +21,11 @@ const OwnerCouponManager = () => {
   const fetchCoupons = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('https://ecom-ghqt.onrender.com/api/orders');
+      const token = localStorage.getItem('token');
+      // 🟢 เปลี่ยน URL เป็น /api/coupons
+      const res = await axios.get('https://ecom-ghqt.onrender.com/api/coupons', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setCoupons(res.data || []);
     } catch (err) {
       console.error('Fetch coupons error:', err);
@@ -40,7 +44,6 @@ const OwnerCouponManager = () => {
     setMessage('');
     setIsError(false);
 
-    // 1. Validation ป้องกันข้อมูลไม่ครบก่อนส่งไปหลังบ้าน
     if (!code.trim()) {
       setIsError(true);
       setMessage('กรุณากรอกรหัสคูปอง');
@@ -56,17 +59,22 @@ const OwnerCouponManager = () => {
     setSubmitting(true);
 
     try {
-      // 2. จัดระเบียบข้อมูลให้ตรงกับที่ Backend ต้องการเป๊ะๆ
+      const token = localStorage.getItem('token');
       const payload = {
-        code: code.trim().toUpperCase(), // บังคับเป็นตัวพิมพ์ใหญ่
+        code: code.trim().toUpperCase(),
         discountType: discountType,
         discountValue: discountType === 'free_shipping' ? 0 : Number(discountValue),
         minCartTotal: Number(minCartTotal) || 0
       };
 
-      await axios.post('https://ecom-ghqt.onrender.com/api/orders', payload);
+      // 🟢 เปลี่ยน URL เป็น /api/coupons และใส่ Header
+      await axios.post('https://ecom-ghqt.onrender.com/api/coupons', payload, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
 
-      // 3. จัดการเมื่อสำเร็จ
       setIsError(false);
       setMessage('สร้างคูปองสำเร็จเรียบร้อยแล้ว!');
       
@@ -75,14 +83,12 @@ const OwnerCouponManager = () => {
       setDiscountValue('');
       setMinCartTotal('0');
       
-      // โหลดข้อมูลคูปองใหม่มาแสดงทันที
-      fetchCoupons();
+      fetchCoupons(); // รีโหลดข้อมูลใหม่
 
     } catch (err) {
       console.error('Create error:', err);
       setIsError(true);
-      // ดึงข้อความ Error จาก Backend มาแสดงให้คนใช้รู้สาเหตุ
-      const errorMsg = err.response?.data?.msg || err.response?.data?.error || 'เกิดข้อผิดพลาด ไม่สามารถเชื่อมต่อกับ Server ได้';
+      const errorMsg = err.response?.data?.msg || err.response?.data?.error || 'เกิดข้อผิดพลาดในการสร้างคูปอง';
       setMessage(errorMsg);
     } finally {
       setSubmitting(false);
@@ -90,46 +96,47 @@ const OwnerCouponManager = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-10 font-sans text-slate-900">
+    <div className="min-h-screen bg-black text-white p-6 md:p-10 font-sans">
       <div className="max-w-6xl mx-auto">
-        <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 pb-6">
+        {/* Header */}
+        <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-zinc-800 pb-8">
           <div>
-            <h1 className="text-4xl font-black tracking-tight text-slate-900 flex items-center gap-3">
-              <Ticket className="text-blue-600" size={36} />
+            <h1 className="text-5xl font-black italic tracking-tighter text-red-600 flex items-center gap-4 uppercase">
+              <Ticket size={48} strokeWidth={3} />
               COUPON STUDIO
             </h1>
-            <p className="text-slate-500 mt-2 font-medium">จัดการส่วนลดและโปรโมชั่นสำหรับร้านค้าของคุณ</p>
+            <p className="text-zinc-500 mt-2 font-bold uppercase tracking-widest text-xs">Manage your store's explosive promotions</p>
           </div>
-          <Link to="/owner-dashboard" className="text-blue-600 hover:text-blue-800 font-bold transition flex items-center gap-2">
-            ← กลับไปหน้าสินค้า
+          <Link to="/owner-dashboard" className="group text-zinc-400 hover:text-white font-black transition-all flex items-center gap-2 uppercase text-xs tracking-tighter border-b border-zinc-800 hover:border-red-600 pb-1">
+            <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
+            Back to Warehouse
           </Link>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* ฝั่งซ้าย: ฟอร์มสร้างคูปอง */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+          {/* ฝั่งซ้าย: Form */}
           <div className="lg:col-span-5">
-            <form onSubmit={handleCreateCoupon} className="bg-white p-8 rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100">
-              <h2 className="text-xl font-black mb-6 flex items-center gap-2 text-slate-800">
-                <PlusCircle size={22} className="text-blue-500" />
-                CREATE NEW COUPON
+            <div className="bg-zinc-900/50 p-8 rounded-[2.5rem] border border-zinc-800 backdrop-blur-sm sticky top-28">
+              <h2 className="text-xl font-black mb-8 flex items-center gap-3 text-white uppercase italic">
+                <PlusCircle size={22} className="text-red-600" />
+                Forge New Coupon
               </h2>
 
-              {/* ส่วนแสดงข้อความแจ้งเตือน */}
               {message && (
-                <div className={`p-4 rounded-2xl mb-6 flex items-start gap-3 ${isError ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-green-50 text-green-700 border border-green-100'}`}>
-                  {isError ? <AlertCircle size={20} className="shrink-0 mt-0.5" /> : <CheckCircle2 size={20} className="shrink-0 mt-0.5" />}
-                  <p className="font-bold text-sm">{message}</p>
+                <div className={`p-4 rounded-2xl mb-8 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300 ${isError ? 'bg-red-600/10 text-red-500 border border-red-600/20' : 'bg-green-600/10 text-green-500 border border-green-600/20'}`}>
+                  {isError ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
+                  <p className="font-black text-[11px] uppercase tracking-wider">{message}</p>
                 </div>
               )}
 
-              <div className="space-y-5">
+              <form onSubmit={handleCreateCoupon} className="space-y-6">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Coupon Code</label>
+                  <label className="block text-[10px] font-black text-zinc-500 uppercase mb-2 tracking-[0.2em] ml-1">Unique Code</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. SUMMER2024"
-                    className="w-full bg-slate-50 p-4 rounded-2xl outline-none border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-black uppercase text-slate-700 transition"
+                    placeholder="SNEAKER_HOT"
+                    className="w-full bg-black p-4 rounded-2xl outline-none border border-zinc-800 focus:border-red-600 font-black uppercase text-white transition-all placeholder:text-zinc-700"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                   />
@@ -137,31 +144,29 @@ const OwnerCouponManager = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Type</label>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase mb-2 tracking-[0.2em] ml-1">Benefit Type</label>
                     <select
-                      className="w-full bg-slate-50 p-4 rounded-2xl outline-none border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-bold text-slate-700 transition"
+                      className="w-full bg-black p-4 rounded-2xl outline-none border border-zinc-800 focus:border-red-600 font-bold text-white transition-all appearance-none cursor-pointer"
                       value={discountType}
                       onChange={(e) => {
                         setDiscountType(e.target.value);
                         if(e.target.value === 'free_shipping') setDiscountValue('');
                       }}
                     >
-                      <option value="amount">ลดเป็นเงิน (฿)</option>
-                      <option value="percent">ลดเปอร์เซ็นต์ (%)</option>
-                      <option value="free_shipping">จัดส่งฟรี</option>
+                      <option value="amount">Cash Discount (฿)</option>
+                      <option value="percent">Percentage (%)</option>
+                      <option value="free_shipping">Free Shipping</option>
                     </select>
                   </div>
 
-                  {/* ซ่อนช่องใส่ค่าลดราคา ถ้าเลือกเป็นจัดส่งฟรี */}
                   {discountType !== 'free_shipping' && (
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Value</label>
+                      <label className="block text-[10px] font-black text-zinc-500 uppercase mb-2 tracking-[0.2em] ml-1">Discount Value</label>
                       <input
                         type="number"
                         min="1"
                         required
-                        placeholder={discountType === 'percent' ? "e.g. 10" : "e.g. 100"}
-                        className="w-full bg-slate-50 p-4 rounded-2xl outline-none border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-bold text-slate-700 transition"
+                        className="w-full bg-black p-4 rounded-2xl outline-none border border-zinc-800 focus:border-red-600 font-black text-white transition-all"
                         value={discountValue}
                         onChange={(e) => setDiscountValue(e.target.value)}
                       />
@@ -170,64 +175,72 @@ const OwnerCouponManager = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Min Cart Total (฿)</label>
+                  <label className="block text-[10px] font-black text-zinc-500 uppercase mb-2 tracking-[0.2em] ml-1">Min. Spend (฿)</label>
                   <input
                     type="number"
                     min="0"
-                    placeholder="e.g. 1000 (0 = ไม่มีขั้นต่ำ)"
-                    className="w-full bg-slate-50 p-4 rounded-2xl outline-none border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-bold text-slate-700 transition"
+                    className="w-full bg-black p-4 rounded-2xl outline-none border border-zinc-800 focus:border-red-600 font-black text-white transition-all"
                     value={minCartTotal}
                     onChange={(e) => setMinCartTotal(e.target.value)}
                   />
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black mt-8 hover:bg-blue-700 transition shadow-lg shadow-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? 'กำลังสร้าง...' : 'CREATE COUPON'}
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full bg-red-600 text-white py-5 rounded-2xl font-black mt-4 hover:bg-white hover:text-black transition-all shadow-xl shadow-red-600/20 disabled:opacity-50 uppercase tracking-[0.2em] text-xs"
+                >
+                  {submitting ? 'Forging...' : 'Activate Coupon'}
+                </button>
+              </form>
+            </div>
           </div>
 
-          {/* ฝั่งขวา: รายการคูปอง */}
+          {/* ฝั่งขวา: List */}
           <div className="lg:col-span-7">
-            <h3 className="text-xl font-black mb-6 flex items-center gap-2 text-slate-800">
-              <ClipboardList size={22} className="text-slate-400" />
-              ACTIVE COUPONS
+            <h3 className="text-xl font-black mb-8 flex items-center gap-3 text-white italic uppercase">
+              <ClipboardList size={22} className="text-zinc-600" />
+              Active Explosives
             </h3>
             
             {loading ? (
-              <div className="p-10 text-center text-slate-500 font-bold bg-slate-100 rounded-[2rem] animate-pulse">
-                กำลังโหลดข้อมูลคูปอง...
+              <div className="space-y-4">
+                {[1, 2, 3].map(i => <div key={i} className="h-28 bg-zinc-900 rounded-3xl animate-pulse border border-zinc-800"></div>)}
               </div>
             ) : coupons && coupons.length > 0 ? (
-              <div className="space-y-4">
+              <div className="grid gap-4">
                 {coupons.map((coupon) => (
-                  <div key={coupon._id} className="rounded-3xl bg-white p-6 border border-slate-200 shadow-sm hover:shadow-md transition">
-                    <div className="flex items-center justify-between gap-4">
+                  <div key={coupon._id} className="group relative overflow-hidden rounded-3xl bg-zinc-900/30 p-8 border border-zinc-800 hover:border-red-600/50 transition-all">
+                    {/* Ticket Cut-outs (Decoration) */}
+                    <div className="absolute top-1/2 -left-3 h-6 w-6 -translate-y-1/2 rounded-full bg-black border-r border-zinc-800"></div>
+                    <div className="absolute top-1/2 -right-3 h-6 w-6 -translate-y-1/2 rounded-full bg-black border-l border-zinc-800"></div>
+                    
+                    <div className="flex items-center justify-between gap-6 relative z-10">
                       <div>
-                        <p className="text-xl font-black uppercase tracking-tight text-blue-600">{coupon.code}</p>
-                        <p className="text-slate-500 font-semibold mt-1">
+                        <div className="flex items-center gap-3 mb-1">
+                          <p className="text-3xl font-black uppercase tracking-tighter text-red-600 italic">{coupon.code}</p>
+                          <span className="text-[10px] font-black bg-zinc-800 px-2 py-0.5 rounded text-zinc-400 uppercase tracking-widest">Active</span>
+                        </div>
+                        <p className="text-zinc-400 font-bold text-sm uppercase tracking-tight">
                           {coupon.discountType === 'free_shipping'
-                            ? '✅ จัดส่งฟรี' 
+                            ? '🚀 No Shipping Cost' 
                             : coupon.discountType === 'percent'
-                              ? `💸 ลด ${coupon.discountValue}%`
-                              : `💸 ลด ${coupon.discountValue} บาท`}
+                              ? `⚡ ${coupon.discountValue}% OFF Total`
+                              : `💰 ฿${coupon.discountValue} Instant Rebate`}
                         </p>
                       </div>
-                      <span className="inline-flex items-center rounded-xl bg-slate-100 text-slate-600 px-4 py-2 text-sm font-bold border border-slate-200">
-                        ขั้นต่ำ ฿{coupon.minCartTotal}
-                      </span>
+                      <div className="text-right">
+                        <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Threshold</p>
+                        <p className="text-lg font-black text-white italic">฿{coupon.minCartTotal}</p>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-slate-50 p-12 text-center text-slate-500 font-bold">
-                ยังไม่มีคูปองที่เปิดใช้งานในระบบ
+              <div className="rounded-[3rem] border-2 border-dashed border-zinc-800 bg-zinc-900/10 p-20 text-center">
+                <Ticket size={48} className="mx-auto text-zinc-800 mb-4 opacity-20" />
+                <p className="text-zinc-600 font-black uppercase tracking-widest text-sm italic">Zero Active Coupons Found</p>
               </div>
             )}
           </div>

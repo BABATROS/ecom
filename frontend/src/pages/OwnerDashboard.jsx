@@ -1,18 +1,18 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   PackagePlus, LayoutDashboard, Trash2, ImageIcon, 
-  Video as VideoIcon, Film, ClipboardList, CheckCircle2, 
-  ExternalLink, Ticket, Loader2, Tag, X 
+  Video as VideoIcon, Ticket, Loader2, Tag, Edit3, X, Save, AlertCircle
 } from 'lucide-react';
 
 const OwnerDashboard = () => {
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
-  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(true);
-  
+  const [editingId, setEditingId] = useState(null);
+
   const [formData, setFormData] = useState({
     name: '', brand: '', price: '', description: '', stock: '1'
   });
@@ -21,188 +21,224 @@ const OwnerDashboard = () => {
   const [imagePreviews, setImagePreviews] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
 
-  const API_URL = 'https://ecom-ghqt.onrender.com/api';
-  const BASE_SERVER_URL = 'https://ecom-ghqt.onrender.com';
+  const BASE_URL = 'https://ecom-ghqt.onrender.com';
+  const API_URL = `${BASE_URL}/api`;
+
+  const getAuthConfig = useCallback(() => {
+    const token = localStorage.getItem('token');
+    return { headers: { Authorization: `Bearer ${token}` } };
+  }, []);
 
   const fetchData = useCallback(async () => {
     setFetchLoading(true);
     try {
-      const [prodRes, orderRes] = await Promise.all([
-        axios.get(`${API_URL}/products`),
-        axios.get(`${API_URL}/orders/all`)
-      ]);
-      setProducts(Array.isArray(prodRes.data) ? prodRes.data : []);
-      setOrders(Array.isArray(orderRes.data) ? orderRes.data : []);
+      const config = getAuthConfig();
+      // ดึงเฉพาะสินค้าที่เป็นของ Owner คนนี้
+      const res = await axios.get(`${API_URL}/products/my-products`, config);
+      setProducts(res.data);
     } catch (err) {
-      console.error('Fetch error:', err);
+      console.error('Fetch error:', err.response?.data || err.message);
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        navigate('/login');
+      }
     } finally {
       setFetchLoading(false);
     }
-  }, [API_URL]);
+  }, [API_URL, getAuthConfig, navigate]);
 
   useEffect(() => {
     fetchData();
     return () => imagePreviews.forEach(url => URL.revokeObjectURL(url));
   }, [fetchData]);
 
-  const handleImageChange = (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length + selectedImages.length > 5) {
-      return alert("ลงรูปได้สูงสุด 5 รูปครับ");
-    }
-    
-    const newFiles = [...selectedImages, ...files];
-    setSelectedImages(newFiles);
-    
-    const newPreviews = files.map(file => URL.createObjectURL(file));
-    setImagePreviews(prev => [...prev, ...newPreviews]);
+  const handleEditClick = (product) => {
+    setEditingId(product._id);
+    setFormData({
+      name: product.name,
+      brand: product.brand || '',
+      price: product.price.toString(),
+      description: product.description || '',
+      stock: product.stock.toString()
+    });
+    // ล้าง preview เก่าเมื่อสลับมาโหมดแก้ไข
+    imagePreviews.forEach(url => URL.revokeObjectURL(url));
+    setImagePreviews([]); 
+    setSelectedImages([]);
+    setSelectedVideo(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const removeImage = (index) => {
-    URL.revokeObjectURL(imagePreviews[index]);
-    setSelectedImages(prev => prev.filter((_, i) => i !== index));
-    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({ name: '', brand: '', price: '', description: '', stock: '1' });
+    imagePreviews.forEach(url => URL.revokeObjectURL(url));
+    setSelectedImages([]);
+    setImagePreviews([]);
+    setSelectedVideo(null);
+  };
+
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length + selectedImages.length > 5) return alert("จำกัดสูงสุด 5 รูป");
+    
+    const newPreviews = files.map(file => URL.createObjectURL(file));
+    setSelectedImages(prev => [...prev, ...files]);
+    setImagePreviews(prev => [...prev, ...newPreviews]);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.price || selectedImages.length === 0) {
-      return alert('กรุณากรอกชื่อ ราคา และเลือกรูปภาพอย่างน้อย 1 รูป');
-    }
+    if (!formData.name || !formData.price) return alert('กรุณากรอกข้อมูลชื่อและราคา');
 
     setLoading(true);
     const formPayload = new FormData();
+    
+    // Append ข้อมูล Text
     Object.keys(formData).forEach(key => formPayload.append(key, formData[key]));
+    
+    // Append รูปภาพ
     selectedImages.forEach(file => formPayload.append('images', file));
     if (selectedVideo) formPayload.append('video', selectedVideo);
 
     try {
-      await axios.post(`${API_URL}/products/add`, formPayload, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      alert('เพิ่มสินค้าสำเร็จ!');
-      setFormData({ name: '', brand: '', price: '', description: '', stock: '1' });
-      imagePreviews.forEach(url => URL.revokeObjectURL(url));
-      setSelectedImages([]); 
-      setImagePreviews([]); 
-      setSelectedVideo(null);
-      fetchData();
+      const config = {
+        headers: { 
+          ...getAuthConfig().headers,
+          'Content-Type': 'multipart/form-data'
+        }
+      };
+
+      if (editingId) {
+        // [PUT] แก้ไขสินค้า
+        await axios.put(`${API_URL}/products/${editingId}`, formPayload, config);
+        alert('อัปเดตข้อมูลสินค้าสำเร็จ!');
+      } else {
+        // [POST] เพิ่มสินค้าใหม่ (เช็ครูปภาพเฉพาะตอนเพิ่มใหม่)
+        if (selectedImages.length === 0) {
+          setLoading(false);
+          return alert('กรุณาเลือกรูปภาพอย่างน้อย 1 รูปสำหรับสินค้าใหม่');
+        }
+        await axios.post(`${API_URL}/products`, formPayload, config);
+        alert('เพิ่มสินค้าใหม่สำเร็จ!');
+      }
+
+      resetForm();
+      fetchData(); 
     } catch (err) {
-      alert(err.response?.data?.error || 'เกิดข้อผิดพลาดในการเพิ่มสินค้า');
+      alert(err.response?.data?.msg || 'เกิดข้อผิดพลาดในการบันทึก');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteProduct = async (id) => {
-    if (!window.confirm("ยืนยันการลบสินค้านี้? (ลบแล้วกู้คืนไม่ได้)")) return;
+    if (!window.confirm("คุณแน่ใจหรือไม่ที่จะลบสินค้าชิ้นนี้?")) return;
+    setLoading(true);
     try {
-      await axios.delete(`${API_URL}/products/${id}`);
-      setProducts(prev => prev.filter(p => p._id !== id));
-    } catch (err) {
-      alert("ลบไม่สำเร็จ");
-    }
-  };
-
-  const handleConfirmPayment = async (orderId) => {
-    if (!window.confirm("ยืนยันยอดเงินโอนถูกต้อง?")) return;
-    try {
-      await axios.put(`${API_URL}/orders/${orderId}/status`, { status: 'Paid' }); 
+      await axios.delete(`${API_URL}/products/${id}`, getAuthConfig());
       fetchData();
-      alert("ยืนยันสำเร็จ!");
     } catch (err) {
-      alert("เกิดข้อผิดพลาด");
+      alert(err.response?.data?.msg || "ไม่สามารถลบสินค้าได้");
+    } finally {
+      setLoading(false);
     }
   };
 
   if (fetchLoading) return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
-      <Loader2 className="animate-spin text-red-600" size={64} />
-      <p className="text-zinc-500 font-black italic animate-pulse">BOOTING STUDIO...</p>
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center">
+      <Loader2 className="animate-spin text-red-600 mb-4" size={48} />
+      <p className="text-zinc-500 font-black italic uppercase tracking-widest">Synchronizing Inventory...</p>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-black text-white p-4 md:p-8 font-sans selection:bg-red-600/30">
+    <div className="min-h-screen bg-black text-white p-4 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto">
-        
         {/* Header Section */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12 border-b border-zinc-900 pb-10">
           <div className="flex items-center gap-5">
-            <div className="bg-red-600 p-4 rounded-3xl shadow-[0_0_30px_rgba(220,38,38,0.3)] animate-pulse">
+            <div className="bg-red-600 p-4 rounded-3xl shadow-[0_0_20px_rgba(220,38,38,0.4)]">
               <LayoutDashboard size={32} />
             </div>
             <div>
-              <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter">Seller Studio</h1>
-              <p className="text-zinc-500 font-bold uppercase text-[10px] tracking-[0.3em] flex items-center gap-2">
-                <span className="w-2 h-2 bg-green-500 rounded-full"></span> Live Inventory Control
-              </p>
+              <h1 className="text-4xl font-black italic uppercase tracking-tighter">Studio Dashboard</h1>
+              <p className="text-zinc-500 text-[10px] tracking-[0.3em] uppercase font-bold italic">Management Interface</p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Link to="/admin/orders" className="bg-zinc-900 border border-zinc-800 hover:border-green-600 transition-all px-6 py-3 rounded-2xl font-black text-xs flex items-center gap-2 group text-zinc-300">
-              <ClipboardList size={18} className="group-hover:rotate-12 transition-transform text-green-500" /> 
-              ORDERS CONTROL
-            </Link>
-            <Link to="/admin/coupons" className="bg-zinc-900 border border-zinc-800 hover:border-red-600 transition-all px-6 py-3 rounded-2xl font-black text-xs flex items-center gap-2 group text-zinc-300">
-              <Ticket size={18} className="group-hover:rotate-12 transition-transform text-red-500" /> 
-              COUPONS
+          <div className="flex gap-3">
+            <Link to="/admin/orders" className="bg-zinc-900 border border-zinc-800 px-6 py-4 rounded-2xl font-black text-[10px] flex items-center gap-2 hover:bg-white hover:text-black transition-all uppercase">Orders List</Link>
+            <Link to="/admin/coupons" className="bg-zinc-900 border border-zinc-800 px-6 py-4 rounded-2xl font-black text-[10px] flex items-center gap-2 hover:border-red-600 transition-all text-red-500 uppercase">
+              <Ticket size={16} /> Coupons
             </Link>
           </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-          
-          {/* Form Side */}
+          {/* Form Column */}
           <div className="lg:col-span-4">
-            <form onSubmit={handleSubmit} className="bg-zinc-900/40 backdrop-blur-xl p-8 rounded-[2.5rem] border border-zinc-800 sticky top-10 shadow-2xl">
-              <h2 className="text-xl font-black mb-8 flex items-center gap-3 text-red-600 uppercase italic">
-                <PackagePlus size={24} /> New Listing
-              </h2>
-              
+            <form onSubmit={handleSubmit} className={`bg-zinc-900/80 backdrop-blur-xl p-8 rounded-[2.5rem] border-2 transition-all duration-500 sticky top-10 ${editingId ? 'border-blue-600 shadow-[0_0_40px_rgba(37,99,235,0.15)]' : 'border-zinc-800 shadow-2xl'}`}>
+              <div className="flex justify-between items-center mb-8">
+                <h2 className={`text-xl font-black italic uppercase flex items-center gap-2 ${editingId ? 'text-blue-500' : 'text-red-600'}`}>
+                  {editingId ? <Edit3 size={20}/> : <PackagePlus size={20}/>} {editingId ? 'Edit Product' : 'New Listing'}
+                </h2>
+                {editingId && (
+                  <button type="button" onClick={resetForm} className="text-zinc-500 hover:text-white flex items-center gap-1 text-[10px] font-black uppercase transition-colors">
+                    Cancel <X size={14} />
+                  </button>
+                )}
+              </div>
+
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase ml-2">Product Name</label>
-                  <input required type="text" className="w-full bg-zinc-800/50 border border-zinc-700/50 p-4 rounded-2xl focus:ring-2 ring-red-600 outline-none transition-all text-white placeholder:text-zinc-600" placeholder="เช่น Nike Dunk Low Retro" value={formData.name} onChange={(e)=>setFormData({...formData, name: e.target.value})} />
+                  <label className="text-[10px] font-black text-zinc-500 uppercase ml-2 italic">Product Name</label>
+                  <input required placeholder="E.g. Jordan 1 Retro" className="w-full bg-black p-4 rounded-2xl outline-none border border-zinc-800 focus:border-red-600 transition-all" value={formData.name} onChange={(e)=>setFormData({...formData, name: e.target.value})} />
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase ml-2">Brand</label>
-                    <input type="text" className="w-full bg-zinc-800/50 border border-zinc-700/50 p-4 rounded-2xl outline-none focus:border-red-600 text-white" placeholder="Nike" value={formData.brand} onChange={(e)=>setFormData({...formData, brand: e.target.value})} />
+                    <label className="text-[10px] font-black text-zinc-500 uppercase ml-2 italic">Brand</label>
+                    <input placeholder="Nike" className="w-full bg-black p-4 rounded-2xl outline-none border border-zinc-800 focus:border-red-600 transition-all" value={formData.brand} onChange={(e)=>setFormData({...formData, brand: e.target.value})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase ml-2">Price (฿)</label>
-                    <input required type="number" className="w-full bg-zinc-800/50 border border-zinc-700/50 p-4 rounded-2xl outline-none focus:border-red-600 text-white" placeholder="3500" value={formData.price} onChange={(e)=>setFormData({...formData, price: e.target.value})} />
+                    <label className="text-[10px] font-black text-zinc-500 uppercase ml-2 italic">Price (฿)</label>
+                    <input required type="number" placeholder="0.00" className="w-full bg-black p-4 rounded-2xl outline-none border border-zinc-800 focus:border-red-600 transition-all text-red-500 font-bold" value={formData.price} onChange={(e)=>setFormData({...formData, price: e.target.value})} />
                   </div>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase ml-2">Description</label>
-                  <textarea className="w-full bg-zinc-800/50 border border-zinc-700/50 p-4 rounded-2xl h-24 text-white resize-none" placeholder="บอกรายละเอียดสินค้าของคุณ..." value={formData.description} onChange={(e)=>setFormData({...formData, description: e.target.value})} />
+                  <label className="text-[10px] font-black text-zinc-500 uppercase ml-2 italic">Inventory Stock</label>
+                  <input required type="number" className="w-full bg-black p-4 rounded-2xl outline-none border border-zinc-800 focus:border-red-600 transition-all" value={formData.stock} onChange={(e)=>setFormData({...formData, stock: e.target.value})} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-2">
-                  <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-zinc-800 rounded-3xl cursor-pointer hover:border-red-600 hover:bg-red-600/5 transition-all group">
-                    <ImageIcon className="text-zinc-500 group-hover:text-red-600 transition-colors" />
-                    <span className="text-[9px] font-black mt-2 uppercase tracking-widest">Images ({selectedImages.length}/5)</span>
-                    <input type="file" multiple hidden onChange={handleImageChange} accept="image/*" />
-                  </label>
-                  <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-zinc-800 rounded-3xl cursor-pointer hover:border-green-600 hover:bg-green-600/5 transition-all group relative">
-                    {selectedVideo ? <CheckCircle2 className="text-green-500" /> : <VideoIcon className="text-zinc-500 group-hover:text-green-600" />}
-                    <span className="text-[9px] font-black mt-2 uppercase tracking-widest">
-                      {selectedVideo ? "Video Added" : "Add Video"}
-                    </span>
-                    <input type="file" hidden onChange={(e)=>setSelectedVideo(e.target.files[0])} accept="video/*" />
-                  </label>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase ml-2 italic">Description</label>
+                  <textarea placeholder="Product details..." className="w-full bg-black p-4 rounded-2xl h-24 outline-none border border-zinc-800 focus:border-red-600 transition-all resize-none text-zinc-400 text-sm italic" value={formData.description} onChange={(e)=>setFormData({...formData, description: e.target.value})} />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                   <label className="flex flex-col items-center p-4 border-2 border-dashed border-zinc-800 rounded-2xl cursor-pointer hover:border-red-600 hover:bg-red-600/5 transition-all">
+                      <ImageIcon size={20} className={selectedImages.length > 0 ? "text-red-500" : "text-zinc-500"} />
+                      <span className="text-[9px] mt-2 font-black uppercase tracking-tighter">Images ({selectedImages.length}/5)</span>
+                      <input type="file" multiple hidden accept="image/*" onChange={handleFileChange} />
+                   </label>
+                   <label className="flex flex-col items-center p-4 border-2 border-dashed border-zinc-800 rounded-2xl cursor-pointer hover:border-green-600 hover:bg-green-600/5 transition-all">
+                      <VideoIcon size={20} className={selectedVideo ? "text-green-500" : "text-zinc-500"} />
+                      <span className="text-[9px] mt-2 font-black uppercase tracking-tighter">{selectedVideo ? "Video Ready" : "Add Video"}</span>
+                      <input type="file" hidden accept="video/*" onChange={(e) => setSelectedVideo(e.target.files[0])} />
+                   </label>
                 </div>
 
+                {/* Media Previews */}
                 {imagePreviews.length > 0 && (
                   <div className="flex gap-2 overflow-x-auto py-2 scrollbar-hide">
                     {imagePreviews.map((src, i) => (
                       <div key={i} className="relative flex-shrink-0 group">
-                        <img src={src} className="w-16 h-16 rounded-xl object-cover ring-2 ring-zinc-800" alt="preview" />
-                        <button type="button" onClick={() => removeImage(i)} className="absolute -top-1 -right-1 bg-red-600 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <img src={src} className="w-14 h-14 rounded-xl object-cover border border-zinc-700" alt="preview" />
+                        <button type="button" onClick={() => {
+                          URL.revokeObjectURL(imagePreviews[i]);
+                          setSelectedImages(prev => prev.filter((_, idx) => idx !== i));
+                          setImagePreviews(prev => prev.filter((_, idx) => idx !== i));
+                        }} className="absolute -top-1 -right-1 bg-red-600 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
                           <X size={10} />
                         </button>
                       </div>
@@ -211,129 +247,71 @@ const OwnerDashboard = () => {
                 )}
               </div>
 
-              <button type="submit" disabled={loading} className={`w-full py-5 rounded-[1.5rem] font-black text-lg italic mt-8 transition-all active:scale-95 shadow-lg shadow-red-900/20 ${loading ? 'bg-zinc-700 cursor-not-allowed' : 'bg-red-600 hover:bg-white hover:text-black text-white'}`}>
-                {loading ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <Loader2 className="animate-spin" size={20} /> UPLOADING...
-                  </div>
-                ) : 'CONFIRM LISTING'}
+              <button disabled={loading} className={`w-full py-5 rounded-2xl font-black italic mt-8 transition-all flex items-center justify-center gap-2 ${editingId ? 'bg-blue-600 hover:bg-white hover:text-blue-600' : 'bg-red-600 hover:bg-white hover:text-black'}`}>
+                {loading ? <Loader2 className="animate-spin" /> : (editingId ? <><Save size={18}/> UPDATE PRODUCT</> : <><PackagePlus size={18}/> PUBLISH NOW</>)}
               </button>
             </form>
           </div>
 
-          {/* List Side */}
-          <div className="lg:col-span-8 space-y-12">
-            
-            {/* Pending Orders */}
-            <section>
-              <div className="flex items-center justify-between mb-6 px-2">
-                <h3 className="font-black italic uppercase tracking-tighter text-2xl flex items-center gap-3">
-                  <ClipboardList className="text-red-600" /> Verify Payments
-                </h3>
-                <span className="px-3 py-1 bg-red-600/10 text-red-600 rounded-full text-[10px] font-black border border-red-600/20 uppercase">
-                   {orders.filter(o => o.status !== 'Shipped' && o.status !== 'Cancelled').length} Actions Required
-                </span>
-              </div>
+          {/* Warehouse Column */}
+          <div className="lg:col-span-8">
+            <h3 className="text-2xl font-black italic flex items-center gap-3 uppercase tracking-tighter mb-6">
+              <Tag className="text-red-600" fill="currentColor" size={20}/> Warehouse <span className="text-zinc-600 text-lg">({products.length})</span>
+            </h3>
 
-              <div className="space-y-4 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
-                {orders.filter(o => o.status !== 'Shipped' && o.status !== 'Cancelled').length > 0 ? (
-                  orders.filter(o => o.status !== 'Shipped' && o.status !== 'Cancelled').map((order) => (
-                    <div key={order._id} className="bg-zinc-900/60 p-6 rounded-[2rem] border border-zinc-800 flex flex-col md:flex-row items-center justify-between gap-6 hover:bg-zinc-900 transition-all border-l-4 border-l-yellow-600">
-                      <div className="flex items-center gap-6">
-                        <div className="bg-zinc-800 p-4 rounded-2xl">
-                          <CheckCircle2 className={order.status === 'Paid' ? 'text-green-500' : 'text-yellow-500'} />
-                        </div>
-                        <div>
-                          <p className="text-2xl font-black tracking-tight">฿{order.total?.toLocaleString()}</p>
-                          <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">
-                            {new Date(order.createdAt).toLocaleDateString()} • {order.user?.username || 'GUEST CUSTOMER'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 w-full md:w-auto">
-                        {order.paymentSlip && (
-                          <a href={`${BASE_SERVER_URL}/uploads/${order.paymentSlip}`} target="_blank" rel="noreferrer" className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600/10 text-blue-500 hover:bg-blue-600 hover:text-white px-5 py-3 rounded-xl text-xs font-black transition-all">
-                            <ExternalLink size={14} /> VIEW SLIP
-                          </a>
-                        )}
-                        <button onClick={() => handleConfirmPayment(order._id)} className="flex-1 md:flex-none bg-green-600 hover:bg-green-500 px-5 py-3 rounded-xl text-xs font-black transition-all">
-                          APPROVE
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-16 bg-zinc-900/20 rounded-[2.5rem] border border-dashed border-zinc-800">
-                    <p className="text-zinc-600 font-black italic uppercase tracking-[0.2em] text-sm">Clean Desk. No Pending Slips.</p>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* Inventory Table */}
-            <section>
-              <div className="flex items-center justify-between mb-6 px-2">
-                <h3 className="font-black italic uppercase tracking-tighter text-2xl flex items-center gap-3">
-                  <Tag className="text-red-600" /> Active Stock
-                </h3>
-                <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">Total: {products.length} Items</span>
-              </div>
-
-              <div className="bg-zinc-900/40 rounded-[2rem] border border-zinc-800 overflow-hidden shadow-xl backdrop-blur-sm">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-zinc-950/50 border-b border-zinc-800">
-                      <tr className="text-zinc-500 text-[9px] font-black uppercase tracking-[0.2em]">
-                        <th className="p-6">Product</th>
-                        <th className="p-6 text-center">Price</th>
-                        <th className="p-6 text-center">Media</th>
-                        <th className="p-6 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-800/50">
-                      {products.map((item) => (
-                        <tr key={item._id} className="group hover:bg-white/5 transition-colors">
-                          <td className="p-6">
-                            <div className="flex items-center gap-4">
-                              <div className="w-14 h-14 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-700 flex-shrink-0">
-                                <img 
-                                  src={item.images?.[0] ? `${BASE_SERVER_URL}/uploads/${item.images[0]}` : 'https://via.placeholder.com/100'} 
-                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                                  alt=""
-                                />
-                              </div>
-                              <div>
-                                <p className="font-black italic uppercase tracking-tight text-base leading-none mb-1">{item.name}</p>
-                                <p className="text-[10px] font-bold text-zinc-500 uppercase">{item.brand || 'No Brand'}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-6 text-center font-black text-red-500 italic">
-                            ฿{item.price?.toLocaleString()}
-                          </td>
-                          <td className="p-6">
-                            <div className="flex justify-center gap-2">
-                              {item.images?.length > 0 && <ImageIcon size={14} className="text-zinc-600" />}
-                              {item.video && <Film size={14} className="text-green-500" />}
-                            </div>
-                          </td>
-                          <td className="p-6 text-right">
-                            <button onClick={() => handleDeleteProduct(item._id)} className="p-3 bg-zinc-800/50 hover:bg-red-600/20 hover:text-red-500 rounded-xl transition-all text-zinc-500">
-                              <Trash2 size={18} />
+            <div className="bg-zinc-900/40 rounded-[2.5rem] border border-zinc-800/50 overflow-hidden backdrop-blur-md">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-zinc-950/80 border-b border-zinc-800 text-[10px] font-black uppercase text-zinc-500 italic">
+                    <tr>
+                      <th className="p-6">Product Details</th>
+                      <th className="p-6 text-center">Price</th>
+                      <th className="p-6 text-center">Status</th>
+                      <th className="p-6 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/30">
+                    {products.map(item => (
+                      <tr key={item._id} className={`hover:bg-white/[0.02] transition-all group ${editingId === item._id ? 'bg-blue-600/5' : ''}`}>
+                        <td className="p-6 flex items-center gap-4">
+                          <img 
+                            src={item.images?.[0] ? `${BASE_URL}/uploads/${item.images[0]}` : "https://placehold.co/400x400/18181b/dc2626?text=Sneaker"} 
+                            className={`w-16 h-16 rounded-2xl object-cover border transition-all ${editingId === item._id ? 'border-blue-600 scale-105' : 'border-zinc-800'}`} 
+                            alt={item.name}
+                            onError={(e) => { e.target.src = "https://placehold.co/400x400/18181b/dc2626?text=Sneaker"; }}
+                          />
+                          <div>
+                            <p className={`font-black uppercase italic text-sm ${editingId === item._id ? 'text-blue-400' : ''}`}>{item.name}</p>
+                            <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-[0.2em]">{item.brand || 'Unbranded'}</p>
+                          </div>
+                        </td>
+                        <td className="p-6 text-center font-black italic text-lg">฿{Number(item.price).toLocaleString()}</td>
+                        <td className="p-6 text-center">
+                          <span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase ${item.stock > 0 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                            {item.stock > 0 ? `${item.stock} IN STOCK` : 'OUT OF STOCK'}
+                          </span>
+                        </td>
+                        <td className="p-6 text-right">
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => handleEditClick(item)} className="p-3 bg-zinc-800/50 text-blue-500 rounded-xl hover:bg-blue-600 hover:text-white transition-all">
+                              <Edit3 size={16} />
                             </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {products.length === 0 && (
-                    <div className="p-20 text-center text-zinc-600 font-black italic uppercase">Warehouse is empty</div>
-                  )}
-                </div>
+                            <button onClick={() => handleDeleteProduct(item._id)} className="p-3 bg-zinc-800/50 text-zinc-500 rounded-xl hover:bg-red-600 hover:text-white transition-all">
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </section>
-
+              {products.length === 0 && (
+                <div className="p-32 text-center text-zinc-600 text-xs font-black uppercase tracking-[0.3em]">
+                  No products in warehouse.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

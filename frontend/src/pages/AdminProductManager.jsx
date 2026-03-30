@@ -1,182 +1,195 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Edit3, Trash2, Package, Save, X, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Loader2, Trash2, Plus, Package, Upload, Edit3 } from 'lucide-react';
+
+const API_URL = 'https://ecom-ghqt.onrender.com/api/products';
+const IMAGE_BASE_URL = 'https://ecom-ghqt.onrender.com/uploads/';
 
 const AdminProductManager = () => {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState(null);
-  const [editData, setEditData] = useState({});
+    const navigate = useNavigate();
+    const [products, setProducts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    const [newProduct, setNewProduct] = useState({ name: '', price: '', description: '', stock: '1', brand: '' });
+    const [selectedImage, setSelectedImage] = useState(null);
+    const [preview, setPreview] = useState(null);
 
-  const API_URL = 'https://ecom-ghqt.onrender.com/api/products';
+    // ดึง Token จาก LocalStorage
+    const token = localStorage.getItem('token');
 
-  const fetchProducts = async () => {
-    try {
-      const res = await axios.get(API_URL);
-      setProducts(res.data);
-    } catch (err) {
-      console.error("Fetch error:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    useEffect(() => {
+        fetchProducts();
+    }, []);
 
-  useEffect(() => { fetchProducts(); }, []);
+    // ---------------------------------------------------------
+    // 🔍 ดึงข้อมูลเฉพาะสินค้าที่เป็นของเรา (Owner)
+    // ---------------------------------------------------------
+    const fetchProducts = async () => {
+        try {
+            setLoading(true);
+            // เปลี่ยนเป็นเรียก /my-products และส่ง Header
+            const res = await axios.get(`${API_URL}/my-products`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setProducts(res.data);
+        } catch (err) {
+            console.error("Fetch error:", err);
+            if(err.response?.status === 401) alert("เซสชั่นหมดอายุ กรุณา Login ใหม่");
+        } finally {
+            setLoading(false);
+        }
+    };
 
-  // เข้าสู่โหมดแก้ไข
-  const startEdit = (product) => {
-    setEditingId(product._id);
-    setEditData({ ...product });
-  };
+    const handleImageChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setSelectedImage(file);
+            setPreview(URL.createObjectURL(file));
+        }
+    };
 
-  // ยกเลิกการแก้ไข
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditData({});
-  };
+    // ---------------------------------------------------------
+    // 📤 เพิ่มสินค้าใหม่ (ส่ง Token ไปเพื่อระบุเจ้าของ)
+    // ---------------------------------------------------------
+    const handleAddProduct = async (e) => {
+        e.preventDefault();
+        if (!token) return alert("กรุณาเข้าสู่ระบบก่อนครับ");
 
-  // ส่งข้อมูลที่แก้ไขไป Backend
-  const handleUpdate = async (id) => {
-    try {
-      await axios.put(`${API_URL}/${id}`, editData);
-      alert("อัปเดตข้อมูลสินค้าสำเร็จ!");
-      setEditingId(null);
-      fetchProducts();
-    } catch (err) {
-      alert("เกิดข้อผิดพลาดในการอัปเดต");
-    }
-  };
+        setIsSubmitting(true);
+        const data = new FormData();
+        Object.keys(newProduct).forEach(key => data.append(key, newProduct[key]));
+        if (selectedImage) data.append('images', selectedImage);
 
-  // ลบสินค้า
-  const handleDelete = async (id) => {
-    if (window.confirm("❗ คุณแน่ใจนะว่าจะลบสินค้าชิ้นนี้? ข้อมูลจะหายไปถาวร")) {
-      try {
-        await axios.delete(`${API_URL}/${id}`);
-        setProducts(products.filter(p => p._id !== id));
-      } catch (err) {
-        alert("ลบสินค้าไม่สำเร็จ");
-      }
-    }
-  };
+        try {
+            await axios.post(API_URL, data, {
+                headers: { 
+                    Authorization: `Bearer ${token}`, // ส่ง Token ไปให้ Backend ฝัง Owner ID
+                    'Content-Type': 'multipart/form-data' 
+                }
+            });
+            alert("✅ เพิ่มสินค้าในคลังของคุณเรียบร้อย!");
+            setNewProduct({ name: '', price: '', description: '', stock: '1', brand: '' });
+            setPreview(null);
+            setSelectedImage(null);
+            fetchProducts(); // โหลดรายการเฉพาะของเราใหม่
+        } catch (err) {
+            alert("❌ เพิ่มไม่สำเร็จ: " + (err.response?.data?.error || "เกิดข้อผิดพลาด"));
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
-  if (loading) return <div className="p-10 text-white animate-pulse">กำลังโหลดคลังสินค้า...</div>;
+    // ---------------------------------------------------------
+    // 🗑️ ลบสินค้า (ส่ง Token เพื่อเช็คว่าเป็นเจ้าของจริงไหม)
+    // ---------------------------------------------------------
+    const handleDelete = async (id) => {
+        if (window.confirm("ยืนยันการลบสินค้าชิ้นนี้?")) {
+            try {
+                await axios.delete(`${API_URL}/${id}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setProducts(products.filter(p => p._id !== id));
+                alert("🗑️ ลบสินค้าเรียบร้อย");
+            } catch (err) {
+                alert("ลบไม่สำเร็จ: " + (err.response?.data?.msg || "ไม่มีสิทธิ์ลบ"));
+            }
+        }
+    };
 
-  return (
-    <div className="min-h-screen bg-black p-6 md:p-10 text-white">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-end mb-10">
-          <div>
-            <h1 className="text-4xl font-black italic text-red-600 tracking-tighter">INVENTORY</h1>
-            <p className="text-zinc-500 font-bold uppercase text-xs">Edit prices, stock, and product details</p>
-          </div>
-          <div className="text-right">
-            <span className="text-3xl font-black">{products.length}</span>
-            <p className="text-[10px] text-zinc-500 uppercase font-black">Items in Store</p>
-          </div>
+    if (loading) return (
+        <div className="bg-black min-h-screen flex flex-col items-center justify-center text-red-600">
+            <Loader2 className="animate-spin mb-4" size={48} />
+            <span className="font-black italic uppercase text-2xl">Loading Your Inventory...</span>
         </div>
+    );
 
-        <div className="grid grid-cols-1 gap-4">
-          {products.map((product) => (
-            <div 
-              key={product._id} 
-              className={`bg-zinc-900 border ${editingId === product._id ? 'border-red-600' : 'border-zinc-800'} p-5 rounded-3xl transition-all flex flex-col md:flex-row items-center gap-6`}
-            >
-              {/* รูปสินค้า */}
-              <div className="w-24 h-24 bg-black rounded-2xl overflow-hidden flex-shrink-0 border border-zinc-800">
-                <img 
-                  src={`https://ecom-ghqt.onrender.com/uploads/${product.images[0]}`} 
-                  alt={product.name} 
-                  className="w-full h-full object-cover"
-                  onError={(e) => e.target.src = 'https://placehold.co/100x100?text=No+Image'}
-                />
-              </div>
+    return (
+        <div className="bg-black min-h-screen text-white pb-20">
+            <main className="container mx-auto p-8 pt-32">
+                <h1 className="text-6xl font-black italic uppercase mb-12 italic">
+                    MY <span className="text-red-600">INVENTORY</span>
+                </h1>
 
-              {/* ข้อมูลสินค้า / ฟอร์มแก้ไข */}
-              <div className="flex-grow grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
-                {editingId === product._id ? (
-                  <>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-zinc-500 font-black uppercase">Product Name</label>
-                      <input 
-                        className="bg-black border border-zinc-700 p-2 rounded-lg text-sm focus:border-red-600 outline-none"
-                        value={editData.name}
-                        onChange={(e) => setEditData({...editData, name: e.target.value})}
-                      />
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+                    {/* ฝั่งซ้าย: ฟอร์มเพิ่มสินค้าใหม่ */}
+                    <div className="lg:col-span-4">
+                        <div className="sticky top-32 bg-zinc-900/50 border border-zinc-800 p-8 rounded-[2.5rem] backdrop-blur-xl">
+                            <h2 className="text-xl font-black mb-6 uppercase italic tracking-tighter">Add New Drop</h2>
+                            <form onSubmit={handleAddProduct} className="space-y-4">
+                                <input className="w-full bg-black border border-zinc-800 p-4 rounded-2xl outline-none focus:border-red-600 transition-all" placeholder="Product Name" value={newProduct.name} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} required />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <input className="w-full bg-black border border-zinc-800 p-4 rounded-2xl outline-none focus:border-red-600 transition-all" placeholder="Price (฿)" type="number" value={newProduct.price} onChange={(e)=>setNewProduct({...newProduct, price: e.target.value})} required />
+                                    <input className="w-full bg-black border border-zinc-800 p-4 rounded-2xl outline-none focus:border-red-600 transition-all" placeholder="Stock" type="number" value={newProduct.stock} onChange={(e)=>setNewProduct({...newProduct, stock: e.target.value})} required />
+                                </div>
+                                <label className="flex flex-col items-center justify-center border-2 border-dashed border-zinc-800 rounded-2xl p-6 cursor-pointer hover:border-red-600 transition-all bg-black/50 group">
+                                    {preview ? (
+                                        <img src={preview} className="h-32 object-cover rounded-xl mb-2 shadow-2xl" alt="preview" />
+                                    ) : (
+                                        <Upload className="text-zinc-500 mb-2 group-hover:text-red-600 transition-colors" />
+                                    )}
+                                    <span className="text-[10px] font-black uppercase text-zinc-500">Upload Main Image</span>
+                                    <input type="file" hidden onChange={handleImageChange} accept="image/*" />
+                                </label>
+                                <button 
+                                    disabled={isSubmitting}
+                                    className="w-full bg-red-600 py-4 rounded-2xl font-black uppercase italic hover:bg-white hover:text-black transition-all disabled:opacity-50"
+                                >
+                                    {isSubmitting ? "PUBLISHING..." : "PUBLISH NOW"}
+                                </button>
+                            </form>
+                        </div>
                     </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-zinc-500 font-black uppercase">Price (฿)</label>
-                      <input 
-                        type="number"
-                        className="bg-black border border-zinc-700 p-2 rounded-lg text-sm focus:border-red-600 outline-none"
-                        value={editData.price}
-                        onChange={(e) => setEditData({...editData, price: e.target.value})}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-zinc-500 font-black uppercase">Stock Count</label>
-                      <input 
-                        type="number"
-                        className="bg-black border border-zinc-700 p-2 rounded-lg text-sm focus:border-red-600 outline-none"
-                        value={editData.stock}
-                        onChange={(e) => setEditData({...editData, stock: e.target.value})}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <h3 className="font-black text-lg uppercase truncate">{product.name}</h3>
-                      <p className="text-zinc-500 text-xs font-bold">{product.brand}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-zinc-500 uppercase font-black">Price</p>
-                      <p className="text-xl font-black text-white">฿{product.price?.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-zinc-500 uppercase font-black">Stock</p>
-                      <p className={`text-xl font-black ${product.stock < 5 ? 'text-red-500' : 'text-green-500'}`}>
-                        {product.stock} <span className="text-xs uppercase">Pairs</span>
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
 
-              {/* ปุ่มจัดการ */}
-              <div className="flex space-x-2">
-                {editingId === product._id ? (
-                  <>
-                    <button onClick={() => handleUpdate(product._id)} className="p-3 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition">
-                      <Save size={20} />
-                    </button>
-                    <button onClick={cancelEdit} className="p-3 bg-zinc-800 text-zinc-400 rounded-2xl hover:text-white transition">
-                      <X size={20} />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={() => startEdit(product)} className="p-3 bg-zinc-800 text-zinc-400 rounded-2xl hover:bg-white hover:text-black transition">
-                      <Edit3 size={20} />
-                    </button>
-                    <button onClick={() => handleDelete(product._id)} className="p-3 bg-zinc-800 text-zinc-500 rounded-2xl hover:bg-red-600 hover:text-white transition">
-                      <Trash2 size={20} />
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
+                    {/* ฝั่งขวา: รายการสินค้าปัจจุบัน */}
+                    <div className="lg:col-span-8">
+                        {products.length === 0 ? (
+                            <div className="text-zinc-600 text-center py-20 border-2 border-dashed border-zinc-900 rounded-[3rem]">
+                                <Package size={48} className="mx-auto mb-4 opacity-20" />
+                                <p className="font-black uppercase italic italic text-xl">No items in your drop yet.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                {products.map((product) => (
+                                    <div key={product._id} className="bg-zinc-900/30 border border-zinc-800 rounded-[2rem] p-5 group hover:border-zinc-700 transition-all">
+                                        <div className="aspect-square rounded-2xl overflow-hidden bg-black mb-6 relative">
+                                            <img 
+                                                src={product.images && product.images.length > 0 
+                                                    ? (product.images[0].startsWith('http') ? product.images[0] : `${IMAGE_BASE_URL}${product.images[0]}`)
+                                                    : 'https://via.placeholder.com/400'} 
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-all duration-700" 
+                                                alt={product.name}
+                                            />
+                                            <div className="absolute top-4 left-4 bg-black/80 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+                                                <span className="text-[10px] font-black uppercase">Stock: {product.totalStock || product.stock}</span>
+                                            </div>
+                                        </div>
+                                        <h3 className="text-lg font-black uppercase italic truncate tracking-tighter">{product.name}</h3>
+                                        <p className="text-red-600 font-black text-xl mb-6">฿{Number(product.price).toLocaleString()}</p>
+                                        <div className="flex gap-2">
+                                            <button 
+                                                onClick={() => navigate(`/edit-product/${product._id}`)}
+                                                className="flex-1 bg-white text-black py-3 rounded-xl font-black uppercase text-[10px] hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2"
+                                            >
+                                                <Edit3 size={14} /> Edit Specs
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDelete(product._id)} 
+                                                className="p-3 bg-zinc-800 text-zinc-500 rounded-xl hover:bg-red-600 hover:text-white transition-all"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </main>
         </div>
-
-        {products.length === 0 && (
-          <div className="text-center py-20 bg-zinc-900/50 rounded-[3rem] border border-dashed border-zinc-800">
-            <AlertCircle size={48} className="mx-auto text-zinc-800 mb-4" />
-            <p className="text-zinc-500 font-bold uppercase tracking-widest italic">No products found in store.</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+    );
 };
 
 export default AdminProductManager;

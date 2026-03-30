@@ -1,205 +1,263 @@
-// src/pages/Cart.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingBag, Trash2 } from 'lucide-react';
+import { ShoppingBag, Trash2, Tag, Truck, ArrowLeft, ChevronRight, X, Loader2 } from 'lucide-react';
 import axios from 'axios';
-import { getCart, removeFromCart, clearCart } from '../utils/cartUtils';
+import { getCart, removeFromCart } from '../utils/cartUtils';
 
 const Cart = () => {
+  const [cartItems, setCartItems] = useState([]);
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponMessage, setCouponMessage] = useState('');
-  const [cartItems, setCartItems] = useState([]);
-  const [availableCoupons, setAvailableCoupons] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  // URL หลักของ Backend
   const API_BASE_URL = 'https://ecom-ghqt.onrender.com';
 
+  // 🔄 โหลดข้อมูลตะกร้าเริ่มต้น
   useEffect(() => {
-    const items = getCart();
-    setCartItems(Array.isArray(items) ? items : []);
-
-    const fetchCoupons = async () => {
-      try {
-        // ✅ แก้ไข Path เป็น /api/coupons ตามโครงสร้าง Backend ปกติ
-        const res = await axios.get(`${API_BASE_URL}/api/coupons/available`);
-        setAvailableCoupons(res.data);
-      } catch (err) {
-        console.error('Coupon fetch error:', err);
-      }
+    const loadCart = () => {
+      const items = getCart();
+      setCartItems(Array.isArray(items) ? items : []);
     };
-    fetchCoupons();
+    loadCart();
   }, []);
 
-  const subtotal = cartItems.reduce((sum, item) => sum + Number(item.price || 0) * (item.quantity || 1), 0);
-  const baseShipping = cartItems.length > 0 ? 50 : 0;
-  const shipping = appliedCoupon?.discountType === 'free_shipping' && cartItems.length > 0 ? 0 : baseShipping;
-  
-  const discount = appliedCoupon
-    ? appliedCoupon.discountType === 'amount'
-      ? appliedCoupon.discountValue
-      : appliedCoupon.discountType === 'percent'
-        ? Math.floor(subtotal * (appliedCoupon.discountValue / 100))
-        : 0
-    : 0;
+  // 1. คำนวณราคารวมสินค้า (Subtotal)
+  const subtotal = useMemo(() => {
+    return cartItems.reduce((sum, item) => sum + Number(item.price || 0) * (item.quantity || 1), 0);
+  }, [cartItems]);
 
+  const baseShipping = cartItems.length > 0 ? 50 : 0;
+  
+  // 2. คำนวณส่วนลด (Discount)
+  const discount = useMemo(() => {
+    if (!appliedCoupon) return 0;
+    if (appliedCoupon.discountType === 'amount') return appliedCoupon.discountValue;
+    if (appliedCoupon.discountType === 'percent') {
+      return Math.floor(subtotal * (appliedCoupon.discountValue / 100));
+    }
+    return 0;
+  }, [appliedCoupon, subtotal]);
+
+  // 3. คำนวณค่าส่ง (Shipping)
+  const shipping = useMemo(() => {
+    if (cartItems.length === 0) return 0;
+    return appliedCoupon?.discountType === 'free_shipping' ? 0 : baseShipping;
+  }, [appliedCoupon, cartItems.length, baseShipping]);
+
+  // 4. ยอดรวมสุทธิ
   const total = Math.max(subtotal + shipping - discount, 0);
+
+  // --- ฟังก์ชันใช้คูปอง ---
+  const applyCoupon = async () => {
+    const code = couponCode.trim().toUpperCase();
+    if (!code) return setCouponMessage('โปรดระบุโค้ดส่วนลด');
+
+    setIsLoading(true);
+    setCouponMessage('');
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setCouponMessage('กรุณา Login ก่อนใช้คูปอง');
+        return;
+      }
+
+      // 📍 ยิง API ไปที่ verify route
+      const res = await axios.post(
+        `${API_BASE_URL}/api/coupons/verify`, 
+        { code, cartTotal: subtotal },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (res.data.coupon) {
+        setAppliedCoupon(res.data.coupon);
+        setCouponMessage(''); // ล้าง Error Message เมื่อสำเร็จ
+      }
+    } catch (err) {
+      // ดึง Error จาก Backend มาแสดง
+      const errorMsg = err.response?.data?.msg || 'โค้ดไม่ถูกต้องหรือหมดอายุ';
+      setCouponMessage(errorMsg);
+      setAppliedCoupon(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+    setCouponMessage('');
+  };
+
+  const handleRemoveItem = (id) => {
+    const updatedCart = removeFromCart(id);
+    setCartItems(updatedCart);
+    // หากลบจนยอดรวมไม่ถึงขั้นต่ำของคูปอง ให้ยกเลิกคูปองอัตโนมัติ
+    if (appliedCoupon && subtotal < (appliedCoupon.minOrder || 0)) {
+      removeCoupon();
+    }
+  };
 
   const handleCheckout = () => {
     const token = localStorage.getItem('token');
     if (!token) {
-      alert("กรุณาเข้าสู่ระบบก่อนดำเนินการชำระเงิน");
+      alert("กรุณาเข้าสู่ระบบเพื่อดำเนินการต่อ");
       navigate('/login');
       return;
     }
-    if (cartItems.length === 0) {
-      alert("กรุณาเลือกสินค้าลงตะกร้าก่อนครับ");
-      return;
-    }
+    if (cartItems.length === 0) return alert("ตะกร้าของคุณยังว่างอยู่");
+    
+    // ส่งข้อมูลครบถ้วนไปยังหน้า Checkout
     navigate('/checkout', {
       state: { items: cartItems, subtotal, shipping, discount, total, appliedCoupon }
     });
   };
 
   return (
-    <div className="min-h-screen p-8 bg-black text-white font-sans">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-4xl font-black italic mb-10 flex items-center tracking-tighter uppercase text-red-600">
-          <ShoppingBag className="mr-4" size={36} />
-          Your Cart
-        </h1>
+    <div className="min-h-screen p-6 md:p-12 bg-black text-white font-sans selection:bg-red-600">
+      <div className="max-w-7xl mx-auto">
+        
+        {/* Header */}
+        <div className="flex justify-between items-center mb-12">
+          <button 
+            onClick={() => navigate('/')} 
+            className="flex items-center text-zinc-500 hover:text-white transition-colors font-black text-xs uppercase tracking-widest"
+          >
+            <ArrowLeft size={16} className="mr-2" /> CONTINUE SHOPPING
+          </button>
+          <div className="text-right">
+            <h1 className="text-5xl font-black italic text-red-600 tracking-tighter uppercase leading-none">YOUR CART</h1>
+            <p className="text-[10px] text-zinc-500 font-bold uppercase mt-2 tracking-[0.2em]">{cartItems.length} ITEMS SELECTED</p>
+          </div>
+        </div>
 
         {cartItems.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-            <div className="lg:col-span-2 space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+            
+            {/* List of Items */}
+            <div className="lg:col-span-8 space-y-6">
               {cartItems.map((item) => (
-                <div key={item._id} className="bg-zinc-900 p-6 rounded-[2rem] border border-zinc-800 flex flex-col lg:flex-row gap-5 items-center hover:border-zinc-700 transition-all shadow-xl">
-                  {/* ✅ แก้ไข Path รูปภาพเป็น /uploads/ */}
-                  <img
-                    src={item.image 
-                      ? `${API_BASE_URL}/uploads/${item.image}` 
-                      : (item.images && item.images.length > 0 
-                          ? `${API_BASE_URL}/uploads/${item.images[0]}` 
-                          : 'https://placehold.co/300x300/18181b/ef4444?text=Sneaker')}
-                    alt={item.name}
-                    className="w-28 h-28 rounded-2xl object-cover shadow-2xl border border-zinc-800"
-                    onError={(e) => { e.target.src = 'https://placehold.co/300x300/18181b/ef4444?text=Sneaker' }}
-                  />
+                <div key={item._id} className="group relative bg-zinc-900/40 p-6 rounded-[2.5rem] border border-zinc-800 flex flex-col sm:flex-row items-center gap-8 hover:bg-zinc-900 transition-all hover:border-zinc-600 shadow-2xl">
+                  <div className="w-32 h-32 bg-zinc-800 rounded-[2rem] overflow-hidden flex-shrink-0 border border-zinc-700">
+                    <img
+                      src={item.images?.[0] ? `${API_BASE_URL}/uploads/${item.images[0]}` : 'https://placehold.co/400x400/18181b/dc2626?text=Sneaker'}
+                      alt={item.name}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                      onError={(e) => { e.target.src = 'https://placehold.co/400x400/18181b/dc2626?text=Sneaker' }}
+                    />
+                  </div>
                   
-                  <div className="flex-1 text-center lg:text-left">
-                    <h2 className="text-xl font-bold uppercase tracking-tight">{item.name}</h2>
-                    <p className="text-zinc-500 mt-1 font-medium italic text-sm">Quantity: {item.quantity}</p>
-                    <p className="text-red-500 font-mono font-black mt-2 text-lg uppercase">
-                      ฿{(Number(item.price) * item.quantity).toLocaleString()}
-                    </p>
+                  <div className="flex-1 text-center sm:text-left">
+                    <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-1">{item.brand || 'Sneaker Hub'}</p>
+                    <h2 className="text-2xl font-black uppercase tracking-tight italic mb-2 group-hover:text-red-600 transition-colors">{item.name}</h2>
+                    <div className="flex flex-wrap justify-center sm:justify-start gap-4 items-center">
+                      <span className="text-xs bg-zinc-800 px-4 py-1.5 rounded-full font-bold text-zinc-400">Qty: {item.quantity}</span>
+                      <p className="text-xl font-black text-white italic tracking-tighter">
+                        ฿{(Number(item.price) * item.quantity).toLocaleString()}
+                      </p>
+                    </div>
                   </div>
 
                   <button
-                    type="button"
-                    onClick={() => {
-                      const updated = removeFromCart(item._id);
-                      setCartItems(updated);
-                    }}
-                    className="p-4 bg-zinc-800 rounded-2xl text-red-500 hover:bg-red-600 hover:text-white transition-all shadow-lg"
+                    onClick={() => handleRemoveItem(item._id)}
+                    className="p-4 bg-zinc-800/50 rounded-2xl text-zinc-600 hover:bg-red-600 hover:text-white transition-all active:scale-90"
                   >
-                    <Trash2 size={20} />
+                    <Trash2 size={22} />
                   </button>
                 </div>
               ))}
             </div>
 
-            <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 h-fit sticky top-24 shadow-2xl">
-              <h3 className="text-xl font-black mb-6 italic uppercase tracking-widest text-zinc-400">Order Summary</h3>
-              
-              <div className="space-y-4 mb-6">
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    value={couponCode}
-                    placeholder="Coupon Code"
-                    className="flex-1 bg-zinc-800 p-4 rounded-2xl outline-none border border-zinc-700 focus:border-red-600 transition uppercase font-bold text-white"
-                    onChange={(e) => setCouponCode(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const code = couponCode.trim().toUpperCase();
-                      const coupon = availableCoupons.find((c) => c.code === code);
-                      if (!code) return setCouponMessage('กรุณาใส่โค้ด');
-                      if (!coupon) return setCouponMessage('ไม่พบโค้ดนี้');
-                      if (subtotal < coupon.minCartTotal) return setCouponMessage(`ขั้นต่ำ ฿${coupon.minCartTotal}`);
-                      setAppliedCoupon(coupon);
-                      setCouponMessage(`ใช้โค้ด ${coupon.code} สำเร็จ!`);
-                    }}
-                    className="bg-white text-black px-6 rounded-2xl font-black hover:bg-red-600 hover:text-white transition-all"
-                  >
-                    APPLY
-                  </button>
-                </div>
-                {couponMessage && (
-                  <p className={`text-sm font-bold ml-2 ${couponMessage.includes('สำเร็จ') ? 'text-green-400' : 'text-red-500'}`}>
-                    {couponMessage}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-4 text-zinc-400 pb-6 border-b border-zinc-800 mb-6 font-medium text-sm">
-                <div className="flex justify-between">
-                  <span>Subtotal</span>
-                  <span className="text-white font-mono font-bold">฿{subtotal.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Shipping</span>
-                  <span className="text-white font-mono font-bold">{shipping === 0 ? 'FREE' : `฿${shipping.toLocaleString()}`}</span>
-                </div>
-                {appliedCoupon && (
-                  <div className="flex justify-between text-green-400 font-bold">
-                    <span>Discount ({appliedCoupon.code})</span>
-                    <span>-฿{discount.toLocaleString()}</span>
+            {/* Summary Panel */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className="bg-zinc-900 p-10 rounded-[3rem] border border-zinc-800 h-fit sticky top-24 shadow-2xl overflow-hidden">
+                <h3 className="text-xl font-black mb-8 italic uppercase tracking-widest text-red-600 border-b border-zinc-800 pb-4">CHECK OUT</h3>
+                
+                {/* Coupon UI */}
+                <div className="space-y-4 mb-10">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      disabled={appliedCoupon || isLoading}
+                      value={couponCode}
+                      placeholder="DISCOUNT CODE"
+                      className={`w-full bg-black p-5 rounded-2xl outline-none border-2 transition-all font-black uppercase tracking-widest text-sm ${appliedCoupon ? 'border-green-500 text-green-500' : 'border-zinc-800 focus:border-red-600'}`}
+                      onChange={(e) => setCouponCode(e.target.value)}
+                    />
+                    {appliedCoupon && (
+                      <button onClick={removeCoupon} className="absolute right-4 top-1/2 -translate-y-1/2 bg-zinc-800 p-1 rounded-full text-zinc-400 hover:text-white transition-colors">
+                        <X size={16} />
+                      </button>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div className="flex justify-between text-3xl font-black mb-8 italic">
-                <span className="tracking-tighter uppercase">Total</span>
-                <span className="text-red-600 font-mono">฿{total.toLocaleString()}</span>
-              </div>
+                  {!appliedCoupon ? (
+                    <button
+                      onClick={applyCoupon}
+                      disabled={isLoading || !couponCode}
+                      className="w-full bg-zinc-800 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-white hover:text-black transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isLoading ? <Loader2 className="animate-spin" size={16} /> : 'APPLY CODE'}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2 text-green-400 text-[10px] font-black uppercase tracking-widest px-2 animate-pulse">
+                      <Tag size={12} /> {appliedCoupon.code} ACTIVE (-฿{discount.toLocaleString()})
+                    </div>
+                  )}
 
-              <div className="space-y-3">
+                  {couponMessage && !appliedCoupon && (
+                    <p className="text-xs font-bold text-red-500 ml-2 italic animate-bounce">
+                      {couponMessage}
+                    </p>
+                  )}
+                </div>
+
+                {/* Price Calculation Details */}
+                <div className="space-y-5 text-zinc-400 mb-10 font-bold text-sm tracking-tight">
+                  <div className="flex justify-between items-center">
+                    <span className="uppercase text-[10px] tracking-widest">Order Value</span>
+                    <span className="text-white font-mono text-lg">฿{subtotal.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2 uppercase text-[10px] tracking-widest">
+                      <Truck size={14} className="text-red-600" /> Delivery
+                    </div>
+                    <span className={`font-mono text-lg ${shipping === 0 ? 'text-green-500' : 'text-white'}`}>
+                      {shipping === 0 ? 'FREE' : `฿${shipping.toLocaleString()}`}
+                    </span>
+                  </div>
+                  {appliedCoupon && (
+                    <div className="flex justify-between items-center text-green-400">
+                      <span className="uppercase text-[10px] tracking-widest">Discount</span>
+                      <span className="font-mono text-lg">-฿{discount.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="pt-6 border-t border-zinc-800 flex justify-between items-end">
+                    <span className="text-3xl font-black italic tracking-tighter uppercase text-white">TOTAL</span>
+                    <span className="text-4xl font-black text-red-600 font-mono tracking-tighter">฿{total.toLocaleString()}</span>
+                  </div>
+                </div>
+
                 <button
-                  type="button"
                   onClick={handleCheckout} 
-                  className="w-full bg-red-600 py-5 rounded-2xl font-black text-xl hover:bg-white hover:text-black transition-all shadow-xl shadow-red-600/20 transform hover:-translate-y-1"
+                  className="w-full bg-red-600 py-6 rounded-3xl font-black text-lg hover:bg-white hover:text-black transition-all shadow-xl flex items-center justify-center gap-3 group active:scale-95"
                 >
-                  CHECKOUT NOW
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if(window.confirm("ล้างรถเข็น?")) {
-                      clearCart();
-                      setCartItems([]);
-                      setAppliedCoupon(null);
-                      setCouponCode('');
-                      setCouponMessage('');
-                    }
-                  }}
-                  className="w-full bg-transparent border border-zinc-800 text-zinc-500 py-3 rounded-2xl font-bold text-sm hover:bg-zinc-800 hover:text-zinc-300 transition-all"
-                >
-                  CLEAR CART
+                  SECURE CHECKOUT <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
                 </button>
               </div>
             </div>
           </div>
         ) : (
-          <div className="text-center py-32 bg-zinc-900/50 rounded-[3.5rem] border border-dashed border-zinc-800">
-            <p className="text-zinc-500 text-xl italic mb-6 uppercase tracking-widest font-black">Your cart is empty.</p>
+          <div className="text-center py-40 bg-zinc-900/20 rounded-[4rem] border-4 border-dashed border-zinc-800/50 backdrop-blur-sm">
+            <ShoppingBag size={80} className="mx-auto text-zinc-800 mb-8 opacity-20" />
+            <h2 className="text-3xl font-black italic mb-4 uppercase tracking-tighter text-zinc-500">YOUR VAULT IS EMPTY</h2>
             <button
               onClick={() => navigate('/')}
-              className="bg-white text-black px-10 py-4 rounded-full font-black hover:bg-red-600 hover:text-white transition-all transform hover:scale-110 shadow-lg"
+              className="bg-white text-black px-12 py-5 rounded-3xl font-black text-sm hover:bg-red-600 hover:text-white transition-all shadow-2xl tracking-widest"
             >
-              START SHOPPING
+              SHOP LATEST DROP
             </button>
           </div>
         )}
