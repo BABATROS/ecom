@@ -10,98 +10,55 @@ require('dotenv').config();
 
 const app = express();
 
-// 1. ตรวจสอบและสร้างโฟลเดอร์ uploads อัตโนมัติ (ไว้บนสุด)
+// 1. ตรวจสอบและสร้างโฟลเดอร์ uploads
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
-  console.log('📁 Created "uploads" directory');
 }
 
 // 2. Middleware
-// ✅ ปรับ CORS ให้ฉลาดขึ้น รองรับทั้ง Localhost (Vite) และโดเมนบน Render
-app.use(cors({ 
-  origin: function (origin, callback) {
-    // ให้ผ่านหมดเพื่อตัดปัญหาบล็อกข้ามโดเมนตอน Dev/Deploy
-    callback(null, true);
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-})); 
-
+app.use(cors({ origin: true, credentials: true })); 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// ✅ เปิดโฟลเดอร์ให้อ่านรูปภาพได้
 app.use('/uploads', express.static(uploadDir));
 
-// 3. API Routes (ใช้ Try-Catch ครอบไว้ กันเซิร์ฟเวอร์พังถ้าพี่ลืมสร้างไฟล์ไหนไป)
+// 3. API Routes 
+// ✅ แก้ไข: เชื่อม Path '/api/products' เข้ากับไฟล์ './routes/product' (ที่ไม่มี s)
 try {
   app.use('/api/auth', require('./routes/auth'));        
-  app.use('/api/products', require('./routes/product')); // ดึงไฟล์จากชื่อ product.js
-
-  // ถ้าพี่เพิ่งทำถึงแค่ auth กับ product ให้คอมเมนต์ 3 บรรทัดล่างนี้ไว้ก่อนครับ
-  // พอสร้างไฟล์ในโฟลเดอร์ routes เสร็จค่อยเอาคอมเมนต์ออก (จะได้ไม่บัค 404)
-  // app.use('/api/orders', require('./routes/order'));      
-  // app.use('/api/upload', require('./routes/upload'));     
-  // app.use('/api/coupons', require('./routes/coupons'));   
+  app.use('/api/products', require('./routes/product')); // 🔥 แก้ตรงนี้ให้ใช้ได้จริง
 } catch (error) {
-  console.error("⚠️ Mount Route Error (เช็คชื่อไฟล์ในโฟลเดอร์ routes):", error.message);
+  console.error("⚠️ Route Mount Error:", error.message);
 }
 
 // 4. Default Route
 app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Sneaker Hub Backend is running properly',
-    status: 'Online',
-    timestamp: new Date()
-  });
+  res.json({ message: 'Sneaker Hub Backend is Live', status: 'Online' });
 });
 
-// ✅ 5. Error Handling: 404 (หา Path ไม่เจอ)
-app.use((req, res, next) => {
-  res.status(404).json({ error: `Path ${req.originalUrl} not found on this server.` });
+// 5. Error Handling
+app.use((req, res) => {
+  res.status(404).json({ error: `ไม่พบ Path ${req.originalUrl} บนเซิร์ฟเวอร์นี้` });
 });
 
-// ✅ Error Handling: 500 (ดักจับ Error ในระบบ ไม่ให้เซิร์ฟเวอร์ดับ)
 app.use((err, req, res, next) => {
-  console.error("🔥 Global Error:", err.stack);
+  console.error(err.stack);
   res.status(500).json({ error: 'Internal Server Error', message: err.message });
 });
 
-// 6. Database Connection (เวอร์ชันเอาตัวรอดบน Cloud)
+// 6. Database Connection
 const MONGO_URI = process.env.MONGO_URI;
-
 const connectDB = async () => {
-  if (!MONGO_URI) {
-    console.error('❌ ไม่พบ MONGO_URI ในไฟล์ .env (ไปเพิ่มใน Variables ของ Render ด้วยครับ)');
-    return;
-  }
-  
+  if (!MONGO_URI) return console.error('❌ Missing MONGO_URI');
   try {
-    await mongoose.connect(MONGO_URI, {
-      serverSelectionTimeoutMS: 15000, // ให้เวลาคิดนานหน่อยเวลาเน็ต Cloud แกว่ง
-    });
-    console.log('✅ MongoDB Atlas Connected Successfully');
+    await mongoose.connect(MONGO_URI);
+    console.log('✅ MongoDB Atlas Connected');
   } catch (err) {
-    console.error('❌ MongoDB Atlas Error:', err.message);
-    // 🚫 ห้ามใช้ process.exit(1) หรือ Local Fallback บน Render เด็ดขาด
-    // ปล่อยให้มันแสดง Error ใน Log แต่รัน API ตัวอื่นที่ไม่ง้อ DB ต่อไปได้
+    console.error('❌ MongoDB Error:', err.message);
   }
 };
-
 connectDB();
 
 // 7. Start Server
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Sneaker Hub Server running on port ${PORT}`);
-});
-
-// Graceful Shutdown
-process.on('SIGTERM', () => {
-  server.close(() => {
-    mongoose.connection.close();
-    console.log('👋 Server closed.');
-  });
-});
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
