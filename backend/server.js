@@ -17,7 +17,7 @@ const app = express();
 // 🛡️ 1. CORS ต้องมาก่อนเพื่อนเสมอ! (สำคัญมากเพื่อกัน Preflight OPTIONS error)
 const allowedOrigins = [
   'http://localhost:5173', 
-  'https://ecom-nig-r.onrender.com'
+  'https://ecom-nig-r.onrender.com',
   'https://ecom-500.onrender.com'
 ];
 
