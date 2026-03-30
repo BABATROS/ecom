@@ -8,7 +8,7 @@ const UserSchema = new mongoose.Schema({
   role: {
     type: String,
     lowercase: true, 
-    
+    // ✅ เพิ่ม 'customer' เข้าไปเรียบร้อย พี่จะกดปุ่มไหนก็ไม่พังแล้ว!
     enum: ['user', 'customer', 'merchant', 'seller', 'shopowner', 'admin'], 
     default: 'user'
   }

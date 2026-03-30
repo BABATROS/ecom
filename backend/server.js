@@ -22,7 +22,7 @@ app.use('/uploads', express.static(uploadDir));
 
 // 3. API Routes 
 try {
-  app.use('/api/auth', require('./routes/auth'));        
+  app.use('/api/products', require('./routes/product')); // 🔥 ต้องมี s ตรง /api/products       
   
   // ✅ วิธีแก้ 404: 
   // หน้าบ้านเรียก '/api/products' (มี s) -> เราจะโยนไปให้ไฟล์ './routes/product' (ไม่มี s) จัดการ
