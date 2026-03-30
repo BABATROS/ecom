@@ -14,6 +14,10 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 
+// 🚀 [เพิ่มใหม่ตรงนี้!] บอก Express ว่าเราอยู่บน Cloud (Render) ให้เชื่อใจ Proxy ได้
+// ไม่งั้น express-rate-limit จะบล็อกทุกการเชื่อมต่อแล้วพ่น Error 500
+app.set('trust proxy', 1);
+
 // 🛡️ 1. CORS ต้องมาก่อนเพื่อนเสมอ! (สำคัญมากเพื่อกัน Preflight OPTIONS error)
 const allowedOrigins = [
   'http://localhost:5173', 
