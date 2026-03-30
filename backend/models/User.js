@@ -8,7 +8,8 @@ const UserSchema = new mongoose.Schema({
   role: {
     type: String,
     lowercase: true, 
-    enum: ['user', 'merchant', 'seller', 'shopowner', 'admin'], // ✅ เพิ่มให้ครบทุกชื่อเรียก
+    
+    enum: ['user', 'customer', 'merchant', 'seller', 'shopowner', 'admin'], 
     default: 'user'
   }
 }, { timestamps: true });
