@@ -22,14 +22,14 @@ app.use('/uploads', express.static(uploadDir));
 
 // 3. API Routes 
 try {
-  app.use('/api/products', require('./routes/product')); // 🔥 ต้องมี s ตรง /api/products       
+  // ✅ ต้องมีบรรทัดนี้! เพื่อให้ Register ทำงานได้ (ดึงจาก routes/auth.js)
+  app.use('/api/auth', require('./routes/auth'));        
   
-  // ✅ วิธีแก้ 404: 
-  // หน้าบ้านเรียก '/api/products' (มี s) -> เราจะโยนไปให้ไฟล์ './routes/product' (ไม่มี s) จัดการ
+  // ✅ เชื่อม Path มี s ไปหาไฟล์ที่ไม่มี s (ตามที่พี่ตั้งชื่อไว้)
   app.use('/api/products', require('./routes/product')); 
   
 } catch (error) {
-  console.error("⚠️ Route Error:", error.message);
+  console.error("⚠️ Route Error (เช็คชื่อไฟล์ในโฟลเดอร์ routes):", error.message);
 }
 
 // 4. Default Route
