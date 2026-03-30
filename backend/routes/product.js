@@ -6,7 +6,6 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-<<<<<<< HEAD
 // สร้างโฟลเดอร์ uploads ถ้ายังไม่มี
 const uploadDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -27,186 +26,105 @@ const fileFilter = (req, file, cb) => {
   cb(ok ? null : new Error('รองรับเฉพาะไฟล์รูปภาพ (jpg, png, webp)'), ok);
 };
 
+// ✅ ประกาศ upload แค่ครั้งเดียว
 const upload = multer({
   storage,
   fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB
 });
 
-// GET /api/products  — ดึงสินค้าทั้งหมด
-router.get('/', async (req, res) => {
-  try {
-    const products = await Product.find().sort({ createdAt: -1 });
-    res.json(products);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/products/my-products  — ดึงสินค้าของผู้ขายหรือ admin
-router.get('/my-products', protect, sellerOrAdmin, async (req, res) => {
-  try {
-    const query = (req.user.role === 'admin') ? {} : { owner: req.user.id };
-    const products = await Product.find(query).sort({ createdAt: -1 });
-    res.json(products);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/products  — สร้างสินค้าใหม่ พร้อมอัปโหลดรูปภาพ (ฟิลด์ชื่อ images)
-router.post('/', protect, sellerOrAdmin, upload.array('images', 8), async (req, res) => {
-  try {
-    // ตรวจสอบข้อมูลพื้นฐาน
-    const { name, price, category, description, sizes } = req.body;
-    if (!name || !price) {
-      return res.status(400).json({ msg: 'กรุณาระบุชื่อสินค้าและราคา' });
-    }
-
-    const productData = {
-      name,
-      price: Number(price),
-      category: category || 'Sneaker',
-      description: description || '',
-      owner: req.user.id
-    };
-
-    // ถ้าส่ง sizes มาเป็น JSON string ให้ parse
-    if (sizes) {
-      try {
-        productData.sizes = typeof sizes === 'string' ? JSON.parse(sizes) : sizes;
-      } catch (e) {
-        return res.status(400).json({ msg: 'รูปแบบ sizes ไม่ถูกต้อง (ต้องเป็น JSON)' });
-      }
-    }
-
-    // เก็บชื่อไฟล์รูปภาพถ้ามี
-    if (req.files && req.files.length > 0) {
-      productData.images = req.files.map(f => f.filename);
-    }
-
-    const newProduct = new Product(productData);
-    await newProduct.save();
-    res.status(201).json({ success: true, product: newProduct });
-  } catch (err) {
-    // ถ้า multer error จะเข้ามาที่นี่เป็น Error object
-    res.status(500).json({ error: err.message });
-  }
-});
-
-module.exports = router;
-=======
-// ตั้งค่า Upload (OWASP: เพิ่มจำกัดขนาดไฟล์สักหน่อยเพื่อป้องกันคนอัปโหลดไฟล์ยักษ์จนเซิร์ฟเวอร์ค้าง)
-const upload = multer({ 
-    dest: 'uploads/',
-    limits: { fileSize: 5 * 1024 * 1024 } // 5MB
-});
-
 // ==========================================
-// 🛍️ โซนสำหรับลูกค้า (Public - ไม่ต้อง Login)
+// 🛍️ โซนสำหรับลูกค้า (Public)
 // ==========================================
 
-// 1. ดึงสินค้าทั้งหมด (สำหรับหน้าแรก / หน้าร้านค้า)
+// 1. ดึงสินค้าทั้งหมด
 router.get('/', async (req, res) => {
-    try {
-        const products = await Product.find().populate('owner', 'username').sort({ createdAt: -1 });
-        res.json({ success: true, count: products.length, products });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+  try {
+    const products = await Product.find().populate('owner', 'username').sort({ createdAt: -1 });
+    res.json({ success: true, count: products.length, products });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 2. ดึงสินค้าชิ้นเดียว (สำหรับหน้ารายละเอียดสินค้า) - ⚠️ ต้องอยู่ใต้ /my-products เสมอ
+// 2. ดึงสินค้าชิ้นเดียว ⚠️ ต้องอยู่ใต้ routes อื่นที่ขึ้นต้นด้วย /
 router.get('/:id', async (req, res) => {
-    try {
-        const product = await Product.findById(req.params.id).populate('owner', 'username');
-        if (!product) return res.status(404).json({ msg: 'ไม่พบสินค้านี้' });
-        res.json({ success: true, product });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+  try {
+    const product = await Product.findById(req.params.id).populate('owner', 'username');
+    if (!product) return res.status(404).json({ msg: 'ไม่พบสินค้านี้' });
+    res.json({ success: true, product });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 
 // ==========================================
 // 🛡️ โซนสำหรับเจ้าของร้าน และ Admin (Protected)
 // ==========================================
 
-// 3. ดึงข้อมูลสินค้า (เฉพาะของตัวเอง หรือ ทั้งหมดถ้าเป็น Admin)
+// 3. ดึงสินค้าของตัวเอง (หรือทั้งหมดถ้าเป็น Admin)
 router.get('/shop/my-products', protect, sellerOrAdmin, async (req, res) => {
-    try {
-        // แอดมินดูได้หมด, ร้านค้าดูได้แค่ของตัวเอง
-        const query = (req.user.role === 'admin') ? {} : { owner: req.user.id };
-        const products = await Product.find(query).sort({ createdAt: -1 });
-        res.json(products);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+  try {
+    const query = (req.user.role === 'admin') ? {} : { owner: req.user.id };
+    const products = await Product.find(query).sort({ createdAt: -1 });
+    res.json(products);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // 4. เพิ่มสินค้าใหม่
 router.post('/', protect, sellerOrAdmin, upload.fields([{ name: 'images' }]), async (req, res) => {
-    try {
-        let productData = { ...req.body, owner: req.user.id };
-        
-        // 💡 ทริค: เวลาส่ง FormData จาก React ตัว array/object มักจะกลายเป็น String ต้องแปลงกลับ
-        if (typeof req.body.sizes === 'string') {
-            try { productData.sizes = JSON.parse(req.body.sizes); } catch(e) {}
-        }
+  try {
+    let productData = { ...req.body, owner: req.user.id };
 
-        if (req.files?.images) {
-            // เซฟ URL รูปภาพให้ตรงกับที่ตั้งไว้ใน server.js (app.use('/uploads', ...))
-            productData.images = req.files.images.map(f => `/uploads/${f.filename}`);
-        }
-        
-        const newProduct = new Product(productData);
-        await newProduct.save();
-        res.status(201).json({ success: true, product: newProduct });
-    } catch (err) { res.status(400).json({ error: err.message }); }
-});
-
-// 5. แก้ไขสินค้า (ต้องเป็นเจ้าของ หรือ Admin เท่านั้น)
-router.put('/:id', protect, sellerOrAdmin, upload.fields([{ name: 'images' }]), async (req, res) => {
-    try {
-        let product = await Product.findById(req.params.id);
-        if (!product) return res.status(404).json({ msg: 'ไม่พบสินค้าในระบบ' });
-
-        if (product.owner.toString() !== req.user.id && req.user.role !== 'admin') {
-            return res.status(403).json({ msg: 'คุณไม่มีสิทธิ์แก้ไขสินค้านี้' });
-        }
-
-        let updateData = { ...req.body };
-        
-        // แปลง sizes กลับเป็น Array ถ้าส่งมาเป็น String
-        if (typeof req.body.sizes === 'string') {
-            try { updateData.sizes = JSON.parse(req.body.sizes); } catch(e) {}
-        }
-
-        // ถ้ามีการอัปโหลดรูปใหม่ ให้เอาไปต่อท้ายรูปเดิม (หรือจะเขียนทับก็ได้ตามชอบ)
-        if (req.files?.images) {
-            const newImages = req.files.images.map(f => `/uploads/${f.filename}`);
-            updateData.images = [...product.images, ...newImages];
-        }
-
-        product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
-        res.json({ success: true, msg: 'อัปเดตสินค้าเรียบร้อย', product });
-    } catch (err) { res.status(400).json({ error: err.message }); }
-});
-
-// 6. ลบสินค้า (ต้องเป็นเจ้าของ หรือ Admin เท่านั้น)
-router.delete('/:id', protect, sellerOrAdmin, async (req, res) => {
-    try {
-        const product = await Product.findById(req.params.id);
-        
-        if (!product) {
-            return res.status(404).json({ msg: 'ไม่พบสินค้าในระบบ' });
-        }
-
-        // ตรวจสอบสิทธิ์: ถ้าไม่ใช่ Admin และไม่ใช่เจ้าของสินค้า จะลบไม่ได้
-        if (product.owner.toString() !== req.user.id && req.user.role !== 'admin') {
-            return res.status(403).json({ msg: 'คุณไม่มีสิทธิ์ลบสินค้านี้' });
-        }
-
-        await product.deleteOne(); 
-        res.json({ success: true, msg: 'ลบสินค้าเรียบร้อย' });
-    } catch (err) { 
-        res.status(500).json({ error: err.message }); 
+    if (typeof req.body.sizes === 'string') {
+      try { productData.sizes = JSON.parse(req.body.sizes); } catch(e) {}
     }
+
+    if (req.files?.images) {
+      productData.images = req.files.images.map(f => `/uploads/${f.filename}`);
+    }
+
+    const newProduct = new Product(productData);
+    await newProduct.save();
+    res.status(201).json({ success: true, product: newProduct });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// 5. แก้ไขสินค้า
+router.put('/:id', protect, sellerOrAdmin, upload.fields([{ name: 'images' }]), async (req, res) => {
+  try {
+    let product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ msg: 'ไม่พบสินค้าในระบบ' });
+
+    if (product.owner.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ msg: 'คุณไม่มีสิทธิ์แก้ไขสินค้านี้' });
+    }
+
+    let updateData = { ...req.body };
+
+    if (typeof req.body.sizes === 'string') {
+      try { updateData.sizes = JSON.parse(req.body.sizes); } catch(e) {}
+    }
+
+    if (req.files?.images) {
+      const newImages = req.files.images.map(f => `/uploads/${f.filename}`);
+      updateData.images = [...product.images, ...newImages];
+    }
+
+    product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
+    res.json({ success: true, msg: 'อัปเดตสินค้าเรียบร้อย', product });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// 6. ลบสินค้า
+router.delete('/:id', protect, sellerOrAdmin, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ msg: 'ไม่พบสินค้าในระบบ' });
+
+    if (product.owner.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ msg: 'คุณไม่มีสิทธิ์ลบสินค้านี้' });
+    }
+
+    await product.deleteOne();
+    res.json({ success: true, msg: 'ลบสินค้าเรียบร้อย' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;
->>>>>>> e6990a97bae752177921919bcf4bfed3b03febf2
