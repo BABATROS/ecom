@@ -18,6 +18,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:5173', 
   'https://ecom-nig-r.onrender.com'
+  'https://ecom-500.onrender.com'
 ];
 
 app.use(cors({
