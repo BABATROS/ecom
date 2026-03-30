@@ -9,28 +9,38 @@ const UserSchema = new mongoose.Schema({
     type: String,
     lowercase: true, 
     enum: ['user', 'customer', 'merchant', 'seller', 'shopowner', 'admin'],
-    default: 'user'
-  }
+    default: 'customer' // ปรับค่าเริ่มต้นให้เป็น customer เพื่อให้เข้าใจง่ายขึ้น
+  },
+  
+  // ✅ 1. เพิ่มฟิลด์สำหรับระบบ "แก้ไขข้อมูลส่วนตัว"
+  phone: { type: String, default: '' },
+  address: { type: String, default: '' },
+
+  // ✅ 2. เพิ่มฟิลด์สำหรับระบบ "ลืมรหัสผ่าน / รีเซ็ตรหัส"
+  resetPasswordToken: String,
+  resetPasswordExpire: Date
+
 }, { timestamps: true });
 
-// 🔥 แก้ไขตรงนี้ครับพี่! ต้องรับ next และเรียก next() แบบนี้
-UserSchema.pre('save', async function(next) {
-  // 1. ถ้าไม่ได้แก้รหัสผ่าน ให้ไปขั้นตอนถัดไปเลย
-  if (!this.isModified('password')) return next(); 
+// 🔥 ฉบับสมบูรณ์: ใช้ async/await เพียวๆ ไม่ต้องพึ่งพาตัวแปร next เพื่อตัดปัญหา 100%
+UserSchema.pre('save', async function() {
+  // 1. ถ้าไม่ได้แก้รหัสผ่าน หรือไม่ใช่การสร้าง user ใหม่ ให้ข้ามไปเลย
+  if (!this.isModified('password')) {
+    return; 
+  }
 
   try { 
     // 2. เข้ารหัสผ่าน
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    
-    // 3. ✅ สำคัญมาก: ต้องเรียก next() เพื่อบอกว่าทำเสร็จแล้วนะ เซฟลง DB ได้เลย!
-    next(); 
+    // 3. จบการทำงานแค่นี้เลย! Mongoose จะจัดการเซฟลง Database ต่อให้เองแบบหล่อๆ
   } catch (error) {
-    // 4. ถ้ามี Error ให้ส่ง error ไปที่ catch ใน auth.js
-    next(error); 
+    // 4. ถ้ามี Error ให้โยนกลับไปให้ไฟล์ auth.js จัดการ
+    throw error; 
   }
 });
 
+// ฟังก์ชันเทียบรหัสผ่านตอน Login
 UserSchema.methods.comparePassword = async function(pass) {
   return await bcrypt.compare(pass, this.password);
 };

@@ -18,6 +18,71 @@ const createDefaultCoupons = async (adminId) => {
   await Coupon.insertMany(defaultCoupons);
 };
 
+// ==========================================
+// 🛍️ โซนสำหรับลูกค้า (Public)
+// ==========================================
+
+// 🌟 [PUBLIC] ดึงคูปองทั้งหมดที่ยัง Active และไม่หมดอายุ (สำหรับแสดงให้ลูกค้ากดรับ)
+router.get('/public', async (req, res) => {
+  try {
+    const coupons = await Coupon.find({ 
+      active: true, 
+      expiryDate: { $gt: new Date() }, // ดึงเฉพาะที่ยังไม่หมดอายุ
+      $expr: { 
+        // ดึงเฉพาะที่จำนวนการใช้ยังไม่เต็ม (หรือไม่มีจำกัด)
+        $or: [
+          { $eq: ["$usageLimit", null] },
+          { $lt: ["$usedCount", "$usageLimit"] }
+        ]
+      }
+    }).select('-createdBy -usedCount'); // ซ่อนข้อมูลบางอย่างไม่ให้ลูกค้าเห็น
+
+    res.json({ success: true, count: coupons.length, coupons });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🌟 [USER] ตรวจสอบคูปอง (สำหรับหน้า Checkout)
+router.post('/verify', protect, async (req, res) => {
+  try {
+    const { code, cartTotal } = req.body;
+    if (!code) return res.status(400).json({ msg: 'กรุณาระบุรหัสคูปอง' });
+
+    // ค้นหาคูปอง
+    const coupon = await Coupon.findOne({ code: code.trim().toUpperCase() });
+    
+    if (!coupon) {
+      return res.status(404).json({ msg: 'ไม่พบรหัสคูปองนี้' });
+    }
+
+    // 💡 เรียกใช้ Custom Method isValid ที่เราสร้างไว้ใน Model
+    const validation = coupon.isValid(cartTotal);
+    
+    if (!validation.valid) {
+      return res.status(400).json({ msg: validation.msg });
+    }
+
+    res.json({
+      success: true,
+      msg: 'ใช้งานคูปองสำเร็จ',
+      coupon: {
+        _id: coupon._id,
+        code: coupon.code,
+        discountType: coupon.discountType,
+        discountValue: coupon.discountValue,
+        minCartTotal: coupon.minCartTotal
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 🛡️ โซนสำหรับ Admin และ Owner (Protected)
+// ==========================================
+
 // 🌟 [ADMIN/OWNER] ดึงคูปองทั้งหมด
 router.get('/', protect, sellerOrAdmin, async (req, res) => {
   try {
@@ -36,48 +101,6 @@ router.get('/', protect, sellerOrAdmin, async (req, res) => {
     }
 
     res.json(coupons);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 🌟 [PUBLIC/USER] ตรวจสอบคูปอง (สำหรับหน้า Checkout)
-router.post('/verify', protect, async (req, res) => {
-  try {
-    const { code, cartTotal } = req.body;
-    if (!code) return res.status(400).json({ msg: 'กรุณาระบุรหัสคูปอง' });
-
-    // ค้นหาคูปอง (ใช้ .trim().toUpperCase() เพื่อป้องกันการพิมพ์เล็ก/เว้นวรรค)
-    const coupon = await Coupon.findOne({ 
-      code: code.trim().toUpperCase(), 
-      active: true 
-    });
-    
-    if (!coupon) {
-      return res.status(404).json({ msg: 'ไม่พบรหัสคูปองนี้ หรือคูปองหมดอายุแล้ว' });
-    }
-
-    // ตรวจสอบวันหมดอายุ (Expiry Date)
-    if (new Date(coupon.expiryDate) < new Date()) {
-       return res.status(400).json({ msg: 'คูปองนี้หมดอายุแล้ว' });
-    }
-
-    // ตรวจสอบยอดขั้นต่ำ (ถ้า cartTotal ที่ส่งมาน้อยกว่าเงื่อนไข)
-    if (cartTotal < coupon.minCartTotal) {
-      return res.status(400).json({ 
-        msg: `ยอดซื้อขั้นต่ำต้องถึง ฿${coupon.minCartTotal} (ปัจจุบันขาดอีก ฿${coupon.minCartTotal - cartTotal})` 
-      });
-    }
-
-    res.json({
-      success: true,
-      msg: 'ใช้งานคูปองสำเร็จ',
-      coupon: {
-        code: coupon.code,
-        discountType: coupon.discountType,
-        discountValue: coupon.discountValue
-      }
-    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -103,7 +126,7 @@ router.post('/add', protect, sellerOrAdmin, async (req, res) => {
     });
 
     await coupon.save();
-    res.status(201).json(coupon);
+    res.status(201).json({ success: true, msg: 'สร้างคูปองสำเร็จ', coupon });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -120,8 +143,8 @@ router.delete('/:id', protect, sellerOrAdmin, async (req, res) => {
       return res.status(403).json({ msg: "คุณไม่มีสิทธิ์จัดการคูปองนี้" });
     }
 
-    await Coupon.findByIdAndDelete(req.params.id);
-    res.json({ msg: "ลบคูปองสำเร็จแล้ว" });
+    await coupon.deleteOne(); // ใช้ deleteOne แทน findByIdAndDelete เพื่อให้สอดคล้องกับโค้ดส่วนอื่น
+    res.json({ success: true, msg: "ลบคูปองสำเร็จแล้ว" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
