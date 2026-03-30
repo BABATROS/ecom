@@ -14,27 +14,16 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 
-// สร้างโฟลเดอร์ uploads ถ้ายังไม่มี
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+// 🛡️ 1. CORS ต้องมาก่อนเพื่อนเสมอ! (สำคัญมากเพื่อกัน Preflight OPTIONS error)
+const allowedOrigins = [
+  'http://localhost:5173', 
+  'https://ecom-nig-r.onrender.com'
+];
 
-// 🛡️ Security Middlewares
-app.use(helmet({ crossOriginResourcePolicy: false }));
-app.use(mongoSanitize());
-
-// 🛡️ Rate Limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { error: 'ยิง Request บ่อยเกินไปว้อย! พักก่อน 15 นาทีนะ' }
-});
-app.use('/api', limiter);
-
-// 🛡️ CORS
-const allowedOrigins = ['http://localhost:5173', 'https://ecom-nig-r.onrender.com'];
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    // อนุญาตถ้าไม่มี origin (เช่น ยิงผ่าน Postman) หรือ origin อยู่ในลิสต์
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('CORS ไม่อนุญาตให้โดเมนนี้เข้าถึง!'));
@@ -43,11 +32,28 @@ app.use(cors({
   credentials: true
 }));
 
+// 🛡️ 2. Body Parser ต้องมาถัดไป เพื่อให้อ่าน req.body ได้
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// 🛡️ 3. Security Middlewares (วางหลัง CORS และ Body Parser)
+app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(mongoSanitize());
+
+// 🛡️ 4. Rate Limiting 
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: 'ยิง Request บ่อยเกินไปว้อย! พักก่อน 15 นาทีนะ' }
+});
+app.use('/api', limiter);
+
+// 📂 5. จัดการไฟล์ Uploads
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 app.use('/uploads', express.static(uploadDir));
 
-// Routes
+// 🚀 6. Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/products', require('./routes/product'));
 app.use('/api/orders', require('./routes/order'));
@@ -64,7 +70,7 @@ app.use((req, res, next) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error('❌ Server Error:', err.stack);
+  console.error('❌ Server Error:', err.message);
   if (res.headersSent) return next(err);
   res.status(err.status || 500).json({
     error: err.message || 'ระบบหลังบ้านพังชั่วคราว ขอกู้ชีพแป๊บ!',
@@ -72,10 +78,15 @@ app.use((err, req, res, next) => {
   });
 });
 
-// MongoDB
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ Connected to MongoDB'))
-  .catch(err => console.error('❌ DB Error:', err.message));
+// 🗄️ 7. MongoDB (ดักไว้ให้รองรับทั้ง MONGO_URI และ MONGODB_URI เผื่อตั้งชื่อสลับกัน)
+const dbUri = process.env.MONGO_URI || process.env.MONGODB_URI;
+if (!dbUri) {
+  console.error('❌ DB Error: ไม่พบ MONGO_URI หรือ MONGODB_URI ในไฟล์ .env');
+} else {
+  mongoose.connect(dbUri)
+    .then(() => console.log('✅ Connected to MongoDB'))
+    .catch(err => console.error('❌ DB Error:', err.message));
+}
 
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled Rejection:', reason);
