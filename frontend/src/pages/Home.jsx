@@ -13,8 +13,22 @@ const Home = () => {
     const fetchProducts = async () => {
       try {
         const res = await axios.get('https://ecom-ghqt.onrender.com/api/products');
-        // ตรวจสอบข้อมูลก่อน set (เผื่อกรณีข้อมูลมาไม่ครบ)
-        setProducts(Array.isArray(res.data) ? res.data : []);
+        
+        // 🕵️‍♂️ แอบดูข้อมูลใน Console (กด F12 ดูได้) ว่าหลังบ้านส่งอะไรมา
+        console.log("ข้อมูลจาก Backend:", res.data); 
+
+        // 🟢 ปรับเงื่อนไขให้ฉลาดขึ้น รองรับหลายรูปแบบ
+        if (Array.isArray(res.data)) {
+            setProducts(res.data); // กรณีส่ง Array มาตรงๆ
+        } else if (res.data && Array.isArray(res.data.products)) {
+            setProducts(res.data.products); // กรณีส่งมาเป็น { products: [...] }
+        } else if (res.data && Array.isArray(res.data.data)) {
+            setProducts(res.data.data); // กรณีส่งมาเป็น { data: [...] }
+        } else {
+            // ถ้าไม่ตรงเงื่อนไขเลยค่อยให้ว่างเปล่า
+            setProducts([]); 
+        }
+        
       } catch (err) {
         console.error("Fetch error:", err);
       } finally {
@@ -80,7 +94,7 @@ const Home = () => {
                 <div className="relative">
                    {/* Badge สำหรับของใหม่ */}
                    <div className="absolute top-4 left-4 z-20 bg-white text-black text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-tighter italic">
-                      Hot Drop
+                     Hot Drop
                    </div>
                    
                    {/* Product Card Component */}
