@@ -27,15 +27,15 @@ const CouponSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'ยอดสั่งซื้อขั้นต่ำต้องไม่น้อยกว่า 0']
   },
-  // 📅 เพิ่มวันหมดอายุ
+  // 📅 วันหมดอายุ
   expiryDate: {
     type: Date,
     required: [true, 'กรุณาระบุวันหมดอายุคูปอง']
   },
-  // 🔢 จำกัดจำนวนสิทธิ์
+  // 🔢 จำกัดจำนวนสิทธิ์ (null = อัลลิมิต)
   usageLimit: {
     type: Number,
-    default: null // null คือใช้ได้ไม่จำกัด
+    default: null 
   },
   usedCount: {
     type: Number,
@@ -45,37 +45,32 @@ const CouponSchema = new mongoose.Schema({
     type: Boolean, 
     default: true 
   },
-  // 👤 ผู้สร้าง (Admin หรือ ShopOwner)
+  // 🏪 ผู้สร้าง (แอดมินสร้างจะเป็นคูปองกลาง / ร้านค้าสร้างจะเป็นคูปองเฉพาะร้าน)
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: [true, 'ต้องระบุผู้สร้างคูปอง']
+  },
+  // 🔗 ระบุร้านค้าที่สามารถใช้คูปองนี้ได้ (ถ้าเป็น null แปลว่าใช้ได้กับทุกร้าน - คูปองแอดมิน)
+  applicableShop: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
   }
 }, { 
   timestamps: true 
 });
 
-// ✅ เพิ่ม Method สำหรับตรวจสอบว่าคูปองยังใช้งานได้อยู่หรือไม่
-CouponSchema.methods.isValid = function(cartTotal) {
-  const now = new Date();
-  
-  // 1. เช็คสถานะ Active
-  if (!this.active) return { valid: false, msg: 'คูปองนี้ถูกปิดใช้งานแล้ว' };
-  
-  // 2. เช็ควันหมดอายุ
-  if (this.expiryDate && now > this.expiryDate) return { valid: false, msg: 'คูปองนี้หมดอายุแล้ว' };
-  
-  // 3. เช็คจำนวนสิทธิ์ที่เหลือ
-  if (this.usageLimit !== null && this.usedCount >= this.usageLimit) {
-    return { valid: false, msg: 'คูปองนี้ถูกใช้งานครบจำนวนสิทธิ์แล้ว' };
-  }
-  
-  // 4. เช็คยอดสั่งซื้อขั้นต่ำ
-  if (cartTotal < this.minCartTotal) {
-    return { valid: false, msg: `ยอดสั่งซื้อไม่ถึงขั้นต่ำ ฿${this.minCartTotal.toLocaleString()}` };
-  }
+// ✅ สร้าง Index เพื่อความเร็วตอนลูกค้ากรอกหาโค้ดส่วนลด
+CouponSchema.index({ code: 1, active: 1, expiryDate: 1 });
 
-  return { valid: true };
-};
+// ✅ Custom Validator ป้องกันการตั้งส่วนลดเกิน 100% ถ้าเป็นแบบ percent
+CouponSchema.path('discountValue').validate(function(value) {
+  if (this.discountType === 'percent' && value > 100) {
+    return false;
+  }
+  return true;
+}, 'ส่วนลดแบบเปอร์เซ็นต์ (percent) ต้องไม่เกิน 100%');
 
-module.exports = mongoose.model('Coupon', CouponSchema);
+
+// ✅ Method ตรวจสอบคูป

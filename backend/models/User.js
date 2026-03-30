@@ -9,8 +9,17 @@ const UserSchema = new mongoose.Schema({
     type: String,
     lowercase: true, 
     enum: ['user', 'customer', 'merchant', 'seller', 'shopowner', 'admin'],
-    default: 'user'
-  }
+    default: 'customer' // ปรับค่าเริ่มต้นให้เป็น customer เพื่อให้เข้าใจง่ายขึ้น
+  },
+  
+  // ✅ 1. เพิ่มฟิลด์สำหรับระบบ "แก้ไขข้อมูลส่วนตัว"
+  phone: { type: String, default: '' },
+  address: { type: String, default: '' },
+
+  // ✅ 2. เพิ่มฟิลด์สำหรับระบบ "ลืมรหัสผ่าน / รีเซ็ตรหัส"
+  resetPasswordToken: String,
+  resetPasswordExpire: Date
+
 }, { timestamps: true });
 
 // 🔥 ฉบับสมบูรณ์: ใช้ async/await เพียวๆ ไม่ต้องพึ่งพาตัวแปร next เพื่อตัดปัญหา 100%

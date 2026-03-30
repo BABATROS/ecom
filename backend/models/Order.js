@@ -1,68 +1,87 @@
 const mongoose = require('mongoose');
 
 const OrderSchema = new mongoose.Schema({
-  // 🆔 รหัสคำสั่งซื้อแบบอ่านง่าย (เช่น SH-690123)
+  // 🆔 รหัสคำสั่งซื้อแบบอ่านง่าย (เช่น SH-20240520-1234)
   orderNumber: {
     type: String,
     unique: true
   },
+  // 👤 ลูกค้าที่เป็นคนสั่งซื้อ
   user: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
     required: [true, 'ต้องระบุผู้ซื้อ'] 
   },
+  // 🛒 สินค้าในตะกร้า
   items: [{
-    product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+    product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
     name: { type: String, required: true },
-    size: { type: String, required: true }, // 👟 สำคัญมากสำหรับร้านรองเท้า
+    size: { type: String, required: true }, // 👟 ไซส์รองเท้า
     quantity: { type: Number, required: true, min: [1, 'จำนวนต้องอย่างน้อย 1 ชิ้น'] },
-    price: { type: Number, required: true },
-    image: { type: String }
+    price: { type: Number, required: true }, // 🔒 ล็อคราคาสินค้า ณ วันที่ซื้อ (เผื่ออนาคตราคาเปลี่ยน)
+    image: { type: String },
+    // 🏪 สำคัญมาก: ระบุว่าสินค้านี้เป็นของเจ้าของร้านคนไหน (รองรับระบบ Multi-vendor)
+    shopOwner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
   }],
-  total: { 
+
+  // 💰 สรุปยอดเงิน (Financial Breakdown)
+  subTotal: { type: Number, required: true, default: 0 }, // ยอดรวมสินค้า (ก่อนหักส่วนลด)
+  shippingFee: { type: Number, required: true, default: 0 }, // ค่าจัดส่ง
+  coupon: {
+    code: { type: String, default: null }, // ชื่อโค้ด
+    discount: { type: Number, default: 0 } // ยอดที่ลดไป
+  },
+  totalPrice: { 
     type: Number, 
-    required: [true, 'ต้องมียอดรวมราคาสินค้า'],
+    required: [true, 'ต้องมียอดรวมสุทธิ'], // ยอดสุทธิ (subTotal + shippingFee - discount)
     min: [0, 'ยอดรวมห้ามติดลบ']
   },
+
+  // 📍 ที่อยู่จัดส่ง
   shippingAddress: {
-    name: { type: String, required: true }, // ชื่อผู้รับ
-    phone: { type: String, required: true }, // เบอร์ติดต่อ
-    detail: { type: String, required: true } // ที่อยู่โดยละเอียด
+    name: { type: String, required: true },
+    phone: { type: String, required: true },
+    detail: { type: String, required: true }
   },
+
+  // 💳 การชำระเงิน
   paymentMethod: { 
     type: String, 
     required: true, 
-    enum: {
-      values: ['Transfer', 'Cash on Delivery'],
-      message: 'รูปแบบการชำระเงินไม่ถูกต้อง'
-    }
-  },
-  coupon: {
-    code: { type: String, default: null },
-    discount: { type: Number, default: 0 }
+    enum: ['Transfer', 'Cash on Delivery'] // โอนเงิน หรือ เก็บเงินปลายทาง
   },
   paymentSlip: { type: String, default: null }, // URL รูปหลักฐานการโอน
-  paidAt: { type: Date }, // วันที่แจ้งชำระเงิน
-  trackingNumber: { type: String, default: null }, // เลขพัสดุ
-  status: { 
+  paidAt: { type: Date }, // วันที่ยืนยันการชำระเงิน
+
+  // 🏷️ สถานะแยกเป็น 2 ส่วนให้จัดการง่ายขึ้น
+  paymentStatus: {
+    type: String,
+    enum: ['Pending', 'Paid', 'Failed'],
+    default: 'Pending' // รอชำระเงิน
+  },
+  orderStatus: { 
     type: String, 
     enum: [
-      'Waiting for Payment', // รอโอนเงิน/แนบสลิป
-      'Pending',             // รอตรวจสอบ (หลังแนบสลิปหรือเลือก COD)
-      'Confirmed',           // ตรวจสอบชำระเงิน/รับออเดอร์แล้ว
-      'Shipped',             // จัดส่งแล้ว
-      'Completed',           // ลูกค้ารับสินค้าเรียบร้อย
-      'Cancelled'            // ยกเลิกออเดอร์
+      'Processing',  // กำลังจัดเตรียมสินค้า
+      'Shipped',     // จัดส่งแล้ว
+      'Completed',   // ลูกค้ารับสินค้าเรียบร้อย
+      'Cancelled'    // ยกเลิกออเดอร์
     ], 
-    default: 'Waiting for Payment' 
-  }
+    default: 'Processing' 
+  },
+  
+  // 📦 การจัดส่ง
+  trackingNumber: { type: String, default: null }, 
+  shippedAt: { type: Date } // วันที่จัดส่ง
+  
 }, { 
-  timestamps: true // ใช้ timestamps แทน createdAt ตัวเดียวเพื่อดูวันอัปเดตสถานะ
+  timestamps: true // เก็บ createdAt (วันที่สั่งซื้อ) และ updatedAt
 });
 
 // ✅ Middleware: สร้าง Order Number ก่อนบันทึกครั้งแรก
-OrderSchema.pre('save', async function(next) {
+OrderSchema.pre('save', function(next) {
   if (!this.orderNumber) {
+    // สร้างรูปแบบ SH-YYYYMMDD-XXXX (เช่น SH-20260330-8492)
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const random = Math.floor(1000 + Math.random() * 9000);
     this.orderNumber = `SH-${date}-${random}`;
