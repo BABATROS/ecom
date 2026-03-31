@@ -18,7 +18,9 @@ const ProductDetail = () => {
     const fetchProduct = async () => {
       try {
         const res = await axios.get(`${BACKEND_URL}/api/products/${id}`);
-        setProduct(res.data);
+        // 🟢 1. แก้ไขการดึงข้อมูล ให้รองรับโครงสร้างที่ Backend ส่งมา
+        const productData = res.data.product || res.data.data || res.data;
+        setProduct(productData);
       } catch (err) {
         console.error("Error fetching product:", err);
       } finally {
@@ -53,6 +55,12 @@ const ProductDetail = () => {
     // Optional: navigate('/cart');
   };
 
+  // 🟢 2. ฟังก์ชันเช็ค URL รูปภาพ (ถ้าเป็น Cloudinary ให้ใช้ลิงก์ตรงเลย ไม่ต้องเติม /uploads/)
+  const getImageUrl = (img) => {
+    if (!img) return 'https://placehold.co/600x800?text=No+Image';
+    return img.startsWith('http') ? img : `${BACKEND_URL}/uploads/${img}`;
+  };
+
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-black">
       <Loader2 className="animate-spin text-red-600 mb-4" size={48} />
@@ -70,6 +78,10 @@ const ProductDetail = () => {
       </div>
     </div>
   );
+
+  // 🟢 3. ดึงค่าจำนวนสต๊อก โดยเช็คจาก totalStock แทน (ตามชื่อฟิลด์ใน MongoDB)
+  const currentStock = product.totalStock !== undefined ? product.totalStock : (product.stock || 0);
+  const isAvailable = currentStock > 0;
 
   return (
     <div className="min-h-screen bg-black text-white p-6 md:p-12 selection:bg-red-600">
@@ -89,7 +101,7 @@ const ProductDetail = () => {
           <div className="space-y-6">
             <div className="aspect-[4/5] bg-zinc-900/50 rounded-[3.5rem] overflow-hidden border border-zinc-800 group relative shadow-2xl">
               <img 
-                src={product.images && product.images.length > 0 ? `${BACKEND_URL}/uploads/${product.images[selectedImage]}` : 'https://placehold.co/600x800?text=No+Image'} 
+                src={product.images && product.images.length > 0 ? getImageUrl(product.images[selectedImage]) : 'https://placehold.co/600x800?text=No+Image'} 
                 alt={product.name} 
                 className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
               />
@@ -110,7 +122,7 @@ const ProductDetail = () => {
                     onClick={() => setSelectedImage(idx)}
                     className={`w-24 h-24 flex-shrink-0 rounded-2xl overflow-hidden border-2 transition-all ${selectedImage === idx ? 'border-red-600 scale-95 shadow-lg' : 'border-zinc-800 opacity-40 hover:opacity-100'}`}
                   >
-                    <img src={`${BACKEND_URL}/uploads/${img}`} className="w-full h-full object-cover" alt={`view-${idx}`} />
+                    <img src={getImageUrl(img)} className="w-full h-full object-cover" alt={`view-${idx}`} />
                   </button>
                 ))}
               </div>
@@ -126,11 +138,12 @@ const ProductDetail = () => {
                </h1>
                <div className="flex items-center gap-6 mt-6">
                   <span className="text-5xl font-black text-white italic tracking-tighter">
-                    ฿{Number(product.price).toLocaleString()}
+                    {/* ป้องกัน ฿NaN โดยการแปลงเป็น 0 ถ้าหาไม่เจอ */}
+                    ฿{Number(product.price || 0).toLocaleString()}
                   </span>
                   <div className="h-8 w-[2px] bg-zinc-800"></div>
-                  <span className={`text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl ${product.stock > 0 ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500'}`}>
-                    {product.stock > 0 ? `Stock: ${product.stock} Units` : 'Sold Out'}
+                  <span className={`text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl ${isAvailable ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500'}`}>
+                    {isAvailable ? `Stock: ${currentStock} Units` : 'Sold Out'}
                   </span>
                </div>
             </div>
@@ -187,15 +200,15 @@ const ProductDetail = () => {
 
             {/* Action Button */}
             <button 
-              disabled={product.stock <= 0}
+              disabled={!isAvailable}
               className={`group w-full py-7 rounded-[2.5rem] font-black text-2xl italic tracking-tighter flex items-center justify-center gap-4 transition-all transform active:scale-95 shadow-2xl ${
-                product.stock > 0 
+                isAvailable 
                 ? 'bg-red-600 hover:bg-white hover:text-black shadow-[0_20px_40px_rgba(220,38,38,0.2)]' 
                 : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
               }`}
               onClick={addToCart}
             >
-              {product.stock > 0 ? (
+              {isAvailable ? (
                 <>
                   <ShoppingCart size={28} className="group-hover:-translate-y-1 transition-transform" /> 
                   ADD TO DROPS
